@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import sys
 from types import TracebackType
@@ -9,7 +10,7 @@ from types import TracebackType
 import cv2
 
 from cv_engine.errors import CVEngineError
-from cv_engine.models import HandLandmark, TrackingResult, VideoFrame
+from cv_engine.models import ControlResult, HandLandmark, TrackingResult, VideoFrame
 
 
 WINDOW_NAME = "MotionPlay - Hand Tracking"
@@ -29,11 +30,18 @@ FEATURE_POINTS = {
 }
 
 
-def draw_overlay(frame: VideoFrame, result: TrackingResult, loop_fps: float) -> VideoFrame:
+def draw_overlay(
+    frame: VideoFrame, result: TrackingResult, loop_fps: float,
+    controls: ControlResult | None = None,
+) -> VideoFrame:
     """Draw raw landmarks on a copy, leaving the captured frame untouched."""
     canvas = frame.copy()
     height, width = canvas.shape[:2]
     for hand in result.hands:
+        if len(hand.landmarks) != 21 or not all(
+            math.isfinite(value) for p in hand.landmarks for value in (p.x, p.y, p.z)
+        ):
+            continue
         points = [(round(p.x * (width - 1)), round(p.y * (height - 1))) for p in hand.landmarks]
         color = (110, 220, 120) if hand.hand == "right" else (240, 180, 100)
         for start, end in CONNECTIONS:
@@ -42,7 +50,21 @@ def draw_overlay(frame: VideoFrame, result: TrackingResult, loop_fps: float) -> 
             cv2.circle(canvas, point, 5 if index in FEATURE_POINTS else 3, color, -1, cv2.LINE_AA)
     labels = ", ".join(f"{hand.hand} (label {hand.handedness_confidence:.2f})" for hand in result.hands)
     status = f"Hand detected: {labels}" if result.tracking else "No hand detected - show your palm"
-    for row, text in enumerate((status, f"Loop FPS: {loop_fps:.1f} | MediaPipe: {result.processing_ms:.1f} ms | Q / Esc: exit")):
+    text_rows = [status, f"Loop FPS: {loop_fps:.1f} | MediaPipe: {result.processing_ms:.1f} ms | Q / Esc: exit"]
+    if controls is not None:
+        if not controls.hands:
+            text_rows.append("Control: no accepted hand")
+        for hand in controls.hands:
+            if hand.tracking and hand.raw_position is not None and hand.position is not None:
+                raw = (round(hand.raw_position.x * (width - 1)), round(hand.raw_position.y * (height - 1)))
+                smooth = (round(hand.position.x * (width - 1)), round(hand.position.y * (height - 1)))
+                cv2.circle(canvas, raw, 8, (255, 255, 255), 2, cv2.LINE_AA)
+                cv2.drawMarker(canvas, smooth, (220, 80, 220), cv2.MARKER_CROSS, 22, 2, cv2.LINE_AA)
+                text_rows.append(f"{hand.hand} control: x={hand.position.x:.3f} y={hand.position.y:.3f}")
+            else:
+                text_rows.append(f"{hand.hand} control: {hand.status.replace('_', ' ')}")
+        text_rows.append("Palm: white circle = unfiltered | magenta cross = smoothed")
+    for row, text in enumerate(text_rows):
         y = 25 + row * 25
         cv2.putText(canvas, text, (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 3, cv2.LINE_AA)
         cv2.putText(canvas, text, (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
@@ -69,10 +91,13 @@ class Preview:
         self._opened = True
         return self
 
-    def show(self, frame: VideoFrame, result: TrackingResult, loop_fps: float) -> bool:
+    def show(
+        self, frame: VideoFrame, result: TrackingResult, loop_fps: float,
+        controls: ControlResult | None = None,
+    ) -> bool:
         """Return false when Q, Escape, or window close requests a clean stop."""
         try:
-            cv2.imshow(WINDOW_NAME, draw_overlay(frame, result, loop_fps))
+            cv2.imshow(WINDOW_NAME, draw_overlay(frame, result, loop_fps, controls))
             key = cv2.waitKey(1) & 0xFF
             if key in (ord("q"), ord("Q"), 27):
                 return False

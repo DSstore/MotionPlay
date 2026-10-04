@@ -44,7 +44,8 @@ class Landmark:
     """Raw MediaPipe coordinates: x rightward, y downward, z relative to wrist.
 
     Native x/y values are usually 0..1 but may leave the image bounds. They are
-    deliberately not clamped, calibrated, or smoothed in Phase 2. z is not meters.
+    preserved unchanged; the separate control pipeline normalizes/smooths its
+    palm-center output. z is not meters.
     """
 
     x: float
@@ -76,3 +77,44 @@ class TrackingResult:
     def tracking(self) -> bool:
         """Whether this frame contains at least one hand."""
         return bool(self.hands)
+
+
+@dataclass(frozen=True)
+class ControlPosition:
+    """Palm control coordinates: x/y in 0..1, z in wrist-relative model units."""
+
+    x: float
+    y: float
+    z: float
+
+
+@dataclass(frozen=True)
+class HandControl:
+    """One hand's fresh control output or an explicit unavailable state.
+
+    Lost states never expose a stale position. raw_position is the clamped,
+    unfiltered palm center; the original landmarks remain in TrackingResult.
+    """
+
+    hand: Literal["left", "right"]
+    status: Literal["tracking", "temporarily_lost", "lost"]
+    handedness_confidence: float = 0.0
+    raw_position: ControlPosition | None = None
+    position: ControlPosition | None = None
+
+    @property
+    def tracking(self) -> bool:
+        """Whether a fresh, accepted position is available."""
+        return self.status == "tracking" and self.position is not None
+
+
+@dataclass(frozen=True)
+class ControlResult:
+    """Independent states for observed hands; empty until the first accepted hand."""
+
+    hands: tuple[HandControl, ...] = ()
+
+    @property
+    def tracking(self) -> bool:
+        """Whether at least one hand has a fresh control position."""
+        return any(hand.tracking for hand in self.hands)

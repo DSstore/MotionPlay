@@ -41,6 +41,28 @@ class TrackingSettings:
 
 
 @dataclass(frozen=True)
+class ControlSettings:
+    """Palm filtering settings; distances are in normalized image coordinates."""
+
+    smoothing_alpha: float = 0.35
+    dead_zone: float = 0.008
+    min_handedness_confidence: float = 0.75
+    tracking_timeout: float = 0.5
+
+    def __post_init__(self) -> None:
+        checks = (
+            ("SMOOTHING_ALPHA", self.smoothing_alpha, 0 < self.smoothing_alpha <= 1),
+            ("SMOOTHING_DEAD_ZONE", self.dead_zone, 0 <= self.dead_zone <= 1),
+            ("CONTROL_MIN_HANDEDNESS_CONFIDENCE", self.min_handedness_confidence,
+             0 <= self.min_handedness_confidence <= 1),
+            ("CONTROL_TRACKING_TIMEOUT", self.tracking_timeout, self.tracking_timeout > 0),
+        )
+        for name, value, valid in checks:
+            if not math.isfinite(value) or not valid:
+                raise ConfigurationError(f"{name} is out of range; see .env.example.")
+
+
+@dataclass(frozen=True)
 class Settings:
     """Validated application settings; connection URIs stay out of repr()."""
 
@@ -53,6 +75,7 @@ class Settings:
     mongodb_database: str
     camera: CameraSettings = field(default_factory=CameraSettings)
     tracking: TrackingSettings = field(default_factory=TrackingSettings)
+    control: ControlSettings = field(default_factory=ControlSettings)
 
 
 def _value(values: Mapping[str, str | None], name: str, default: str) -> str:
@@ -104,6 +127,17 @@ def _boolean(values: Mapping[str, str | None], name: str, default: bool) -> bool
     if value not in {"true", "false", "1", "0"}:
         raise ConfigurationError(f"{name} must be true, false, 1, or 0.")
     return value in {"true", "1"}
+
+
+def _positive_float(values: Mapping[str, str | None], name: str, default: float) -> float:
+    """Read a finite, strictly positive duration."""
+    try:
+        result = float(_value(values, name, str(default)))
+    except ValueError:
+        raise ConfigurationError(f"{name} must be a finite positive number.") from None
+    if not math.isfinite(result) or result <= 0:
+        raise ConfigurationError(f"{name} must be a finite positive number.")
+    return result
 
 
 def load_settings(
@@ -159,5 +193,11 @@ def load_settings(
             model_complexity=_integer(values, "TRACKING_MODEL_COMPLEXITY", 1, 0, 1),
             detection_confidence=_confidence(values, "TRACKING_DETECTION_CONFIDENCE", 0.6),
             tracking_confidence=_confidence(values, "TRACKING_MIN_CONFIDENCE", 0.6),
+        ),
+        control=ControlSettings(
+            smoothing_alpha=_confidence(values, "SMOOTHING_ALPHA", 0.35),
+            dead_zone=_confidence(values, "SMOOTHING_DEAD_ZONE", 0.008),
+            min_handedness_confidence=_confidence(values, "CONTROL_MIN_HANDEDNESS_CONFIDENCE", 0.75),
+            tracking_timeout=_positive_float(values, "CONTROL_TRACKING_TIMEOUT", 0.5),
         ),
     )
