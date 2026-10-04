@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -19,6 +20,27 @@ class ConfigurationError(ValueError):
 
 
 @dataclass(frozen=True)
+class CameraSettings:
+    """Requested capture settings; a device may negotiate different dimensions/FPS."""
+
+    index: int = 0
+    width: int = 640
+    height: int = 480
+    fps: int = 30
+    mirror: bool = True
+
+
+@dataclass(frozen=True)
+class TrackingSettings:
+    """MediaPipe detection/tracking thresholds, not handedness confidence gates."""
+
+    max_hands: int = 1
+    model_complexity: int = 1
+    detection_confidence: float = 0.6
+    tracking_confidence: float = 0.6
+
+
+@dataclass(frozen=True)
 class Settings:
     """Validated application settings; connection URIs stay out of repr()."""
 
@@ -29,6 +51,8 @@ class Settings:
     unity_to_python_port: int
     mongodb_uri: str = field(repr=False)
     mongodb_database: str
+    camera: CameraSettings = field(default_factory=CameraSettings)
+    tracking: TrackingSettings = field(default_factory=TrackingSettings)
 
 
 def _value(values: Mapping[str, str | None], name: str, default: str) -> str:
@@ -48,6 +72,38 @@ def _port(values: Mapping[str, str | None], name: str, default: str) -> int:
     if not 1024 <= port <= 65535:
         raise ConfigurationError(f"{name} must be an integer from 1024 to 65535.")
     return port
+
+
+def _integer(
+    values: Mapping[str, str | None], name: str, default: int, low: int, high: int
+) -> int:
+    """Read a bounded integer setting without exposing its supplied value."""
+    try:
+        result = int(_value(values, name, str(default)))
+    except ValueError:
+        raise ConfigurationError(f"{name} must be an integer from {low} to {high}.") from None
+    if not low <= result <= high:
+        raise ConfigurationError(f"{name} must be an integer from {low} to {high}.")
+    return result
+
+
+def _confidence(values: Mapping[str, str | None], name: str, default: float) -> float:
+    """Reject nonfinite and out-of-range MediaPipe probability thresholds."""
+    try:
+        result = float(_value(values, name, str(default)))
+    except ValueError:
+        raise ConfigurationError(f"{name} must be a finite number from 0.0 to 1.0.") from None
+    if not math.isfinite(result) or not 0.0 <= result <= 1.0:
+        raise ConfigurationError(f"{name} must be a finite number from 0.0 to 1.0.")
+    return result
+
+
+def _boolean(values: Mapping[str, str | None], name: str, default: bool) -> bool:
+    """Read explicit true/false values, accepting 1/0 for environment overrides."""
+    value = _value(values, name, str(default)).lower()
+    if value not in {"true", "false", "1", "0"}:
+        raise ConfigurationError(f"{name} must be true, false, 1, or 0.")
+    return value in {"true", "1"}
 
 
 def load_settings(
@@ -91,4 +147,17 @@ def load_settings(
         unity_to_python_port=result_port,
         mongodb_uri=mongodb_uri,
         mongodb_database=_value(values, "MONGODB_DATABASE", "motionplay"),
+        camera=CameraSettings(
+            index=_integer(values, "CAMERA_INDEX", 0, 0, 32),
+            width=_integer(values, "CAMERA_WIDTH", 640, 160, 7680),
+            height=_integer(values, "CAMERA_HEIGHT", 480, 120, 4320),
+            fps=_integer(values, "CAMERA_FPS", 30, 1, 120),
+            mirror=_boolean(values, "CAMERA_MIRROR", True),
+        ),
+        tracking=TrackingSettings(
+            max_hands=_integer(values, "TRACKING_MAX_HANDS", 1, 1, 2),
+            model_complexity=_integer(values, "TRACKING_MODEL_COMPLEXITY", 1, 0, 1),
+            detection_confidence=_confidence(values, "TRACKING_DETECTION_CONFIDENCE", 0.6),
+            tracking_confidence=_confidence(values, "TRACKING_MIN_CONFIDENCE", 0.6),
+        ),
     )

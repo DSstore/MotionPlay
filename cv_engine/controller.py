@@ -1,0 +1,108 @@
+"""Run the Phase 2 capture/tracking preview without networking or game logic."""
+
+from __future__ import annotations
+
+import argparse
+import logging
+import sys
+from contextlib import ExitStack
+from time import perf_counter
+
+from shared.config import ConfigurationError, Settings, load_settings
+from shared.logger import configure_logging
+
+
+LOGGER = logging.getLogger("motionplay.cv_engine.controller")
+
+
+def run_tracking(settings: Settings, show_preview: bool = True, max_frames: int | None = None) -> int:
+    """Run until user exit or the frame limit; always release opened resources.
+
+    Native imports are deferred so --help does not initialize models or devices.
+    Return the processed frame count for diagnostics and tests.
+    """
+    import cv2
+
+    from cv_engine.camera import Camera
+    from cv_engine.hand_tracker import HandTracker
+    from cv_engine.preview import Preview
+
+    if max_frames is not None and max_frames < 1:
+        raise ValueError("max_frames must be positive.")
+    with ExitStack() as stack:
+        # Check the optional desktop preview before accessing the camera.
+        preview = stack.enter_context(Preview()) if show_preview else None
+        camera = stack.enter_context(Camera(settings.camera))
+        tracker = stack.enter_context(HandTracker(settings.tracking, settings.camera.mirror))
+        LOGGER.info("Tracking started. Frames stay local; no recording or network transmission.")
+        started_at = last_report_at = perf_counter()
+        previous_tracking = False
+        frame_count = 0
+        while max_frames is None or frame_count < max_frames:
+            frame = camera.read()
+            if settings.camera.mirror:
+                frame = cv2.flip(frame, 1)
+            result = tracker.process(frame)
+            frame_count += 1
+            now = perf_counter()
+            loop_fps = frame_count / max(now - started_at, 1e-9)
+            if result.tracking != previous_tracking:
+                LOGGER.info("Hand tracking restored." if result.tracking else "Hand tracking lost.")
+                previous_tracking = result.tracking
+            if now - last_report_at >= 5:
+                LOGGER.info("Loop FPS %.1f; latest MediaPipe processing %.1f ms.", loop_fps, result.processing_ms)
+                last_report_at = now
+            if preview is not None and not preview.show(frame, result, loop_fps):
+                break
+        LOGGER.info("Tracking finished after %d frame(s).", frame_count)
+        return frame_count
+
+
+def _positive_integer(value: str) -> int:
+    """Validate the CLI frame limit before any resource is opened."""
+    try:
+        result = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("must be a positive integer") from None
+    if result < 1:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return result
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI entry point with actionable failures and controlled exit codes."""
+    parser = argparse.ArgumentParser(description="MotionPlay Phase 2: local webcam hand tracking")
+    parser.add_argument("--no-preview", action="store_true", help="Process frames without opening a window (still requires a webcam)")
+    parser.add_argument("--max-frames", type=_positive_integer, help="Stop after this many processed frames")
+    args = parser.parse_args(argv)
+    try:
+        settings = load_settings()
+        configure_logging(settings)
+    except (ConfigurationError, OSError) as error:
+        print(f"MotionPlay configuration/logging error: {error}", file=sys.stderr)
+        return 1
+
+    from cv_engine.errors import CVEngineError
+
+    LOGGER.info("MotionPlay CV engine starting.")
+    try:
+        run_tracking(settings, show_preview=not args.no_preview, max_frames=args.max_frames)
+    except KeyboardInterrupt:
+        LOGGER.info("Tracking stopped by user.")
+    except CVEngineError as error:
+        LOGGER.error("%s", error)
+        LOGGER.debug("CV failure details", exc_info=True)
+        return 1
+    except (ImportError, OSError):
+        LOGGER.exception("A dependency or native library is unavailable. Run python -m app.health_check in the Python 3.11 environment.")
+        return 1
+    except Exception:
+        LOGGER.exception("Unexpected tracking error. Resources were released; see logs/motionplay.log.")
+        return 1
+    finally:
+        LOGGER.info("MotionPlay CV engine stopped.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

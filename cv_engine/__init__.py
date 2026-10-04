@@ -1,1 +1,1 @@
-"""Computer vision package; tracking functionality comes in Phase 2."""
+"""Local webcam capture and MediaPipe hand tracking, independent of gameplay."""
