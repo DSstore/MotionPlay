@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.Threading;
+using MotionPlay.Control;
 using MotionPlay.Networking;
 using Newtonsoft.Json.Linq;
 using NUnitLite;
@@ -24,11 +25,15 @@ internal static class Program
                 {
                     lastAccepted = snapshot.Accepted;
                     var state = snapshot.State;
+                    CursorMapper.TryMap(snapshot, CursorArea.ForOrthographic(3, 4.0 / 3, 0.12, 0.08),
+                                        true, out CursorPoint cursor);
                     Console.WriteLine(new JObject
                     {
                         ["tracking"] = state.Tracking, ["sequence"] = state.Sequence,
                         ["gesture"] = state.Gesture, ["stream_id"] = state.StreamId,
                         ["accepted"] = snapshot.Accepted, ["invalid"] = snapshot.Invalid,
+                        ["cursor"] = cursor == null ? (JToken)JValue.CreateNull() :
+                            new JObject { ["x"] = cursor.X, ["y"] = cursor.Y },
                         ["position"] = state.Position == null ? (JToken)JValue.CreateNull() :
                             new JObject { ["x"] = state.Position.X, ["y"] = state.Position.Y, ["z"] = state.Position.Z }
                     }.ToString(Newtonsoft.Json.Formatting.None));

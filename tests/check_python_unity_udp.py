@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import socket
 import subprocess
 from pathlib import Path
@@ -71,15 +72,18 @@ def check_pipeline(dotnet: str, assembly: Path) -> None:
             assert tracked["stream_id"] == sender.stream_id and tracked["sequence"] == 0
             assert expected.position is not None
             assert tracked["position"] == {"x": expected.position.x, "y": expected.position.y, "z": expected.position.z}
+            assert math.isclose(tracked["cursor"]["x"], (2 * expected.position.x - 1) * 3.8, abs_tol=1e-12)
+            assert math.isclose(tracked["cursor"]["y"], (1 - 2 * expected.position.y) * 2.8, abs_tol=1e-12)
             assert tracked["invalid"] == 1
             sent = sender.send(ControlResult(), GestureResult(), 0.04)
             assert sent
             lost = json.loads(process.stdout.readline())
             assert lost["tracking"] is False and lost["position"] is None and lost["gesture"] == "UNKNOWN"
+            assert lost["cursor"] is None
         tail, errors = process.communicate(timeout=12)
         assert process.returncode == 0, errors
         assert "TIMEOUT" in tail
-        print("PASS Python landmarks → palm/gestures → UDP → C# tracked/lost states; invalid packet rejected")
+        print("PASS Python landmarks → palm/gestures → UDP → C# cursor mapping/loss; invalid packet rejected")
     finally:
         stop_probe(process)
 

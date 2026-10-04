@@ -2,19 +2,23 @@ using UnityEngine;
 
 namespace MotionPlay.Unity
 {
-    /// <summary>Temporary numeric diagnostics; no cursor movement or gameplay.</summary>
+    /// <summary>Optional numerical diagnostics shared by the receiver and cursor test scenes.</summary>
     [RequireComponent(typeof(UdpReceiver))]
     public sealed class ReceiverDebugPanel : MonoBehaviour
     {
         private UdpReceiver receiver;
+        [SerializeField] private bool expanded = true;
+        public void SetExpanded(bool value) => expanded = value;
         private void Awake() => receiver = GetComponent<UdpReceiver>();
 
         private void OnGUI()
         {
             if (receiver == null) return;
-            GUILayout.BeginArea(new Rect(16, 16, 560, 320), GUI.skin.box);
-            GUILayout.Label("MotionPlay — Phase 6 UDP receiver");
+            GUILayout.BeginArea(new Rect(16, 16, 560, expanded ? 320 : 105), GUI.skin.box);
+            GUILayout.Label("MotionPlay — UDP receiver");
             GUILayout.Label(receiver.Status);
+            if (GUILayout.Button(expanded ? "Collapse diagnostics" : "Expand diagnostics")) expanded = !expanded;
+            if (!expanded) { GUILayout.EndArea(); return; }
             var snapshot = receiver.Snapshot;
             if (snapshot == null)
                 GUILayout.Label("Waiting for listener startup.");

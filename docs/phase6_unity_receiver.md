@@ -1,10 +1,14 @@
 # Phase 6: Unity UDP receiver
 
+This guide describes the Phase 6 receiver-only scene and its original validation.
+Phase 7 adds a separate cursor scene; see the [hand cursor guide](phase7_hand_cursor.md).
+The receiver scene remains available for independent checks.
+
 ## Scope and structure
 
 Phase 6 adds an original, minimal Unity project at `unity/MotionPlay`. It receives
 version-1 CV packets and displays numerical diagnostics. **There is no moving
-cursor or gameplay yet.** Phase 7 will map these validated states to a cursor.
+cursor or gameplay yet.** Phase 7 maps these validated states to a cursor in a separate scene.
 
 ```text
 unity/MotionPlay/
@@ -184,4 +188,4 @@ These results do not verify Unity Editor import/compilation, Game view rendering
 Play Mode lifecycle, Windows-specific socket behavior, live webcam gesture
 accuracy, or end-to-end latency. Complete the Windows checklist before calling
 Phase 6 locally validated. MotionPlay is an educational portfolio project, not
-a medical device. Phase 7 remains unimplemented.
+a medical device. Follow the Phase 7 guide for the separate cursor milestone.

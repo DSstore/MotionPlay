@@ -13,6 +13,6 @@
     <PackageReference Include="NUnitLite" Version="3.13.3" />
     <Compile Include="Program.cs" />
     <Compile Include="../../unity/MotionPlay/Assets/MotionPlay/Core/*.cs" />
-    <Compile Include="../../unity/MotionPlay/Assets/MotionPlay/Tests/EditMode/ReceiverCoreTests.cs" />
+    <Compile Include="../../unity/MotionPlay/Assets/MotionPlay/Tests/EditMode/*.cs" />
   </ItemGroup>
 </Project>

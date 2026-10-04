@@ -67,10 +67,10 @@ in the left/right label, not landmark accuracy. Native landmarks and raw gesture
 candidates are excluded. A usable palm with unusable gesture geometry still
 sends `tracking=true`, its position, and `gesture=UNKNOWN`.
 
-With `mirrored=true`, Python has already mirrored the coordinates; Unity should
-not mirror X again. Unity will convert Y downward to its own coordinate system.
-With `mirrored=false`, a future configurable Unity mapping may invert X for
-mirror-like control. Labels always refer to the physical hand.
+With `mirrored=true`, Python has already mirrored the coordinates; the default Unity Mirror Control
+uses X directly. Unity converts Y downward to its own coordinate system.
+Phase 7 inverts X when the packet mirror flag differs from the desired Mirror
+Control setting, providing mirror-like control even for an unmirrored packet. Labels always refer to the physical hand.
 
 Only the selected hand controls this stream. There is no automatic fallback to
 the other hand, even when both are tracked. Separate filter/gesture states remain
@@ -131,7 +131,11 @@ binds only to loopback.
 
 ## Phase 6 receiver implementation
 
-`unity/MotionPlay/Assets/MotionPlay/Core` validates CV packets on a socket worker, keeps only the latest state, ignores duplicate/older sequence numbers without refreshing the deadline, and retires timed-out streams when a new one takes over. It binds exclusively to **127.0.0.1**. Unity's main-thread `UdpReceiver.Update` observes fresh immutable snapshots; timeout produces a null current state. The main-thread diagnostic panel renders numerical states, with no cursor movement yet. The parser caps nesting at 16 levels and rejects comments, unquoted keys, single quotes, and nonfinite numbers. See the [Unity setup guide](phase6_unity_receiver.md).
+`unity/MotionPlay/Assets/MotionPlay/Core` validates CV packets on a socket worker, keeps only the latest state, ignores duplicate/older sequence numbers without refreshing the deadline, and retires timed-out streams when a new one takes over. It binds exclusively to **127.0.0.1**. Unity's main-thread `UdpReceiver.Update` observes fresh immutable snapshots; timeout produces a null current state. The receiver test scene renders numerical states; Phase 7 adds a separate hand cursor scene consuming these same fresh snapshots. The parser caps nesting at 16 levels and rejects comments, unquoted keys, single quotes, and nonfinite numbers. See the [Unity setup guide](phase6_unity_receiver.md).
+
+## Phase 7 cursor consumption
+
+`MotionPlay.Control.CursorMapper` maps fresh tracked snapshots to an orthographic camera plane, with upward Y and a horizontal flip only when desired and packet mirror flags differ. Model Z does not control cursor depth. A lost or expired state yields no mapped point. `HandCursorController` applies that point on Unity's main thread and hides its renderer when no current position exists. The disc radius plus an edge margin keeps it within the camera view. No wire fields or version changed. See the [cursor proof-of-concept guide](phase7_hand_cursor.md).
 
 ## Reserved Unity → Python messages
 

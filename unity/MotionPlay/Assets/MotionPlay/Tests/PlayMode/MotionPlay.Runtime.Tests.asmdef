@@ -1,0 +1,7 @@
+{
+  "name": "MotionPlay.Runtime.Tests",
+  "rootNamespace": "MotionPlay.Tests",
+  "references": ["MotionPlay.Core", "MotionPlay.Runtime"],
+  "optionalUnityReferences": ["TestAssemblies"],
+  "autoReferenced": false
+}

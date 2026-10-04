@@ -4,13 +4,13 @@ An experimental computer-vision motion gaming platform designed to demonstrate h
 
 **Portfolio/educational project. Not a medical device.** MotionPlay does not provide clinical rehabilitation, diagnosis, or treatment. Future reports will describe gameplay performance metrics, not medical improvement.
 
-## Current status: Phase 6
+## Current status: Phase 7
 
-This is an original implementation. Phase 1 provides the Python package structure, validated `.env` configuration, rotating local logs, an import health check, and foundation tests. Phase 2 adds webcam capture, MediaPipe Hands, reusable hand observations, and a local landmark preview. Phase 3 adds bounded palm-center control coordinates, EMA smoothing, a dead zone, handedness-confidence gating, and tracking-loss timeouts. Phase 4 adds reusable gesture classification and per-hand debouncing for `OPEN_HAND`, `FIST`, `PINCH`, `POINT`, and `UNKNOWN`. Phase 5 adds a paced Python UDP sender, a validated `CV_STATE` JSON protocol, and a local packet monitor. Phase 6 adds a minimal Unity project, a threaded UDP receiver with packet validation, sequence ordering, receive timeout, and a numerical diagnostic panel. Cursor movement/gameplay, databases, authentication, and the dashboard are **not implemented yet**.
+This is an original implementation. Phase 1 provides the Python package structure, validated `.env` configuration, rotating local logs, an import health check, and foundation tests. Phase 2 adds webcam capture, MediaPipe Hands, reusable hand observations, and a local landmark preview. Phase 3 adds bounded palm-center control coordinates, EMA smoothing, a dead zone, handedness-confidence gating, and tracking-loss timeouts. Phase 4 adds reusable gesture classification and per-hand debouncing for `OPEN_HAND`, `FIST`, `PINCH`, `POINT`, and `UNKNOWN`. Phase 5 adds a paced Python UDP sender, a validated `CV_STATE` JSON protocol, and a local packet monitor. Phase 6 adds a minimal Unity project, a threaded UDP receiver with packet validation, sequence ordering, receive timeout, and a numerical diagnostic panel. Phase 7 adds a hand-controlled geometric cursor with mirror-aware coordinate mapping, camera bounds, and visibility tied to fresh tracking. Reach Garden gameplay, databases, authentication, and the dashboard are **not implemented yet**.
 
-Cloud checks cover the Python pipeline, compiled engine-independent C# receiver, and real Python-to-C# UDP delivery. Unity Editor, Windows Play Mode, and live webcam verification remain pending.
+Cloud checks cover the Python pipeline, compiled engine-independent C# receiver/mapping, and real Python-to-C# UDP delivery with cursor-coordinate assertions. Unity Editor, Windows Play Mode, and live webcam verification remain pending.
 
-The first milestone will connect a local webcam through Python/OpenCV/MediaPipe and UDP to a hand-controlled Unity cursor. Reliability of that milestone must be verified before building the first game, **Reach Garden**.
+The first milestone now has its webcam → Python/OpenCV/MediaPipe → UDP → Unity cursor implementation. Verify it reliably on your Windows computer before building the first game, **Reach Garden**; Unity/live webcam validation is still pending.
 
 ## Planned architecture
 
@@ -78,11 +78,11 @@ Start this in a separate PowerShell terminal before the CV engine:
 
 The monitor prints received `CV_STATE` packets on localhost port 5005. `CONTROL_HAND=right` selects the physical hand; set `left` in `.env` if needed. Packets contain filtered position and confirmed gesture, or an explicit lost state with null position. The sender targets 30 Hz, skips excess frames, and never queues stale states. OS-accepted sends do not prove delivery. Use `--no-udp` on the CV engine for local-only preview. See [UDP protocol](docs/udp_protocol.md) and the [Windows test guide](docs/phase5_udp_sender.md).
 
-### Open the Phase 6 Unity receiver
+### Run the Phase 7 hand cursor
 
-In Unity Hub, add the repository's **`unity/MotionPlay`** folder and open it with **Unity 2022.3.62f3**. After packages restore and scripts compile, click **MotionPlay → Create Receiver Test Scene**, then **Play**. Start the Python CV engine in PowerShell. The Game view displays coordinates, gestures, packet counts, and tracking loss; a moving cursor comes in Phase 7.
+In Unity Hub, add the repository's **`unity/MotionPlay`** folder and open it with **Unity 2022.3.62f3**. After packages restore and scripts compile, click **MotionPlay → Create Hand Cursor Test Scene**, then **Play**. Start the Python CV engine in PowerShell. A simple disc follows the filtered palm position, stays inside the orthographic view, and hides on hand loss or receive timeout. Mirroring uses the packet flag to avoid applying the flip twice. Expand diagnostics to inspect received states.
 
-Close the Python packet monitor first; Unity needs exclusive ownership of the receive port. See the [exact Windows clicks, configuration, and acceptance checklist](docs/phase6_unity_receiver.md).
+Close the Python packet monitor first; Unity needs exclusive ownership of the receive port. See the [Phase 7 setup and proof-of-concept checklist](docs/phase7_hand_cursor.md). The [Phase 6 receiver scene](docs/phase6_unity_receiver.md) remains available via **MotionPlay → Create Receiver Test Scene** for independent receiver checks.
 
 ## Repository layout
 
@@ -91,7 +91,7 @@ app/          Health check and local UDP diagnostic monitor
 cv_engine/    Capture, tracking, palm filtering, gestures, preview, UDP sender
 backend/      Reserved for storage, sessions, authentication, and difficulty
 shared/       Configuration, logging, and wire protocol
-unity/        Minimal Unity project, receiver, diagnostic panel, and C# core tests
+unity/        Unity receiver, hand cursor, diagnostic scenes, core and Play Mode tests
 tests/        Hardware-independent unit and loopback integration tests
 docs/         Setup notes; architecture and protocol docs added with implementation
 ```
@@ -117,7 +117,7 @@ dotnet run --project tests/csharp/MotionPlay.ReceiverHarness.csproj -- --noresul
 .\.venv\Scripts\python.exe -m tests.check_python_unity_udp
 ```
 
-The harness does not require Unity or a webcam. Unity itself supplies Json.NET through its official package and NUnit through Test Framework; .NET 8 is not required to run MotionPlay in Unity. See the [Phase 6 guide](docs/phase6_unity_receiver.md) for Unity Test Runner instructions and validation limits.
+The harness does not require Unity or a webcam. Unity itself supplies Json.NET through its official package and NUnit through Test Framework; .NET 8 is not required to run MotionPlay in Unity. The standalone suite has 72 C# cases, including 21 new cursor mapping cases. See the [Phase 7 guide](docs/phase7_hand_cursor.md) for Unity EditMode/PlayMode instructions and the local checks needed before gameplay.
 
 ## Development sequence
 
@@ -127,7 +127,7 @@ The harness does not require Unity or a webcam. Unity itself supplies Json.NET t
 4. Gesture engine (**implemented; local webcam verification pending**).
 5. Python UDP sender (**implemented; live Windows webcam delivery pending**).
 6. Unity UDP receiver (**implemented; Unity Editor/Windows verification pending**).
-7. Hand-controlled Unity cursor; verify the proof of concept.
+7. Hand-controlled Unity cursor (**implemented; local proof-of-concept validation pending**).
 8. Reach Garden gameplay using geometric placeholders.
 9. Session statistics.
 10. Unity results sent to Python.
