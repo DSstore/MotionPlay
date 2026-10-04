@@ -10,7 +10,7 @@ from types import TracebackType
 import cv2
 
 from cv_engine.errors import CVEngineError
-from cv_engine.models import ControlResult, HandLandmark, TrackingResult, VideoFrame
+from cv_engine.models import ControlResult, GestureResult, HandLandmark, TrackingResult, VideoFrame
 
 
 WINDOW_NAME = "MotionPlay - Hand Tracking"
@@ -33,6 +33,7 @@ FEATURE_POINTS = {
 def draw_overlay(
     frame: VideoFrame, result: TrackingResult, loop_fps: float,
     controls: ControlResult | None = None,
+    gestures: GestureResult | None = None,
 ) -> VideoFrame:
     """Draw raw landmarks on a copy, leaving the captured frame untouched."""
     canvas = frame.copy()
@@ -64,6 +65,12 @@ def draw_overlay(
             else:
                 text_rows.append(f"{hand.hand} control: {hand.status.replace('_', ' ')}")
         text_rows.append("Palm: white circle = unfiltered | magenta cross = smoothed")
+    if gestures is not None:
+        for hand in gestures.hands:
+            if hand.tracking:
+                text_rows.append(f"{hand.hand} gesture: {hand.gesture.value} | raw: {hand.candidate.value} ({hand.consecutive_frames} frames)")
+            else:
+                text_rows.append(f"{hand.hand} gesture: UNKNOWN (tracking unavailable)")
     for row, text in enumerate(text_rows):
         y = 25 + row * 25
         cv2.putText(canvas, text, (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 3, cv2.LINE_AA)
@@ -94,10 +101,11 @@ class Preview:
     def show(
         self, frame: VideoFrame, result: TrackingResult, loop_fps: float,
         controls: ControlResult | None = None,
+        gestures: GestureResult | None = None,
     ) -> bool:
         """Return false when Q, Escape, or window close requests a clean stop."""
         try:
-            cv2.imshow(WINDOW_NAME, draw_overlay(frame, result, loop_fps, controls))
+            cv2.imshow(WINDOW_NAME, draw_overlay(frame, result, loop_fps, controls, gestures))
             key = cv2.waitKey(1) & 0xFF
             if key in (ord("q"), ord("Q"), 27):
                 return False

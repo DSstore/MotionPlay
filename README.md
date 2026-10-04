@@ -4,9 +4,9 @@ An experimental computer-vision motion gaming platform designed to demonstrate h
 
 **Portfolio/educational project. Not a medical device.** MotionPlay does not provide clinical rehabilitation, diagnosis, or treatment. Future reports will describe gameplay performance metrics, not medical improvement.
 
-## Current status: Phase 3
+## Current status: Phase 4
 
-This is an original implementation. Phase 1 provides the Python package structure, validated `.env` configuration, rotating local logs, an import health check, and foundation tests. Phase 2 adds webcam capture, MediaPipe Hands, reusable hand observations, and a local landmark preview. Phase 3 adds bounded palm-center control coordinates, EMA smoothing, a dead zone, handedness-confidence gating, and tracking-loss timeouts. Gestures, networking, Unity gameplay, databases, authentication, and the dashboard are **not implemented yet**.
+This is an original implementation. Phase 1 provides the Python package structure, validated `.env` configuration, rotating local logs, an import health check, and foundation tests. Phase 2 adds webcam capture, MediaPipe Hands, reusable hand observations, and a local landmark preview. Phase 3 adds bounded palm-center control coordinates, EMA smoothing, a dead zone, handedness-confidence gating, and tracking-loss timeouts. Phase 4 adds reusable gesture classification and per-hand debouncing for `OPEN_HAND`, `FIST`, `PINCH`, `POINT`, and `UNKNOWN`. Networking, Unity gameplay, databases, authentication, and the dashboard are **not implemented yet**.
 
 The cloud checks cover synthetic inputs and resource/error handling. Live tracking still requires verification on a local webcam before calling this phase hardware-validated.
 
@@ -48,7 +48,7 @@ The health check verifies Python 3.11, OpenCV, MediaPipe, PyQt6 widgets, PyMongo
 
 Direct dependencies are pinned in `requirements.txt`. OpenCV is supplied by `opencv-contrib-python`, which MediaPipe already requires, avoiding competing `cv2` installations. MediaPipe `0.10.21` is selected for its `mp.solutions.hands` API; newer MediaPipe releases use a different API. Transitive dependencies are resolver-selected, so this is not yet a complete dependency lock.
 
-### Run the Phase 3 webcam preview
+### Run the Phase 4 webcam preview
 
 With the environment ready, run from the project root on Windows:
 
@@ -58,19 +58,21 @@ With the environment ready, run from the project root on Windows:
 
 Show your hand to the webcam. The preview draws all 21 landmarks, including wrist, fingertips, and MCP joints, and displays the physical left/right hand label, loop FPS, and MediaPipe processing time. A **white circle** marks the unfiltered palm center; a **magenta cross** marks the smoothed control position. Control X/Y remain between zero and one. Missing or rejected observations expose no active control position, and the filter resets after the configured tracking timeout. Press **Q**, **Escape**, or close the window to stop. No footage is recorded or transmitted. Set `CAMERA_INDEX=1` in `.env` if your preferred webcam is the second camera.
 
+The preview also shows each hand's **raw candidate**, **confirmed gesture**, and consecutive-frame count. Five consecutive accepted frames confirm a change by default. A missing/low-confidence hand or unusable geometry immediately clears its gesture state. These are configurable geometric heuristics; real webcam recognition still requires local validation.
+
 For an attached camera without a preview window:
 
 ```powershell
 .\.venv\Scripts\python.exe -m cv_engine.controller --no-preview --max-frames 300
 ```
 
-Headless mode still requires a camera; it is not a simulated webcam. See [Phase 2 capture and tracking](docs/phase2_hand_tracking.md) and [Phase 3 filtering, tuning, and acceptance checks](docs/phase3_coordinates.md).
+Headless mode still requires a camera; it is not a simulated webcam. See [Phase 2 capture and tracking](docs/phase2_hand_tracking.md), [Phase 3 filtering](docs/phase3_coordinates.md), and [Phase 4 gesture rules, tuning, and acceptance checks](docs/phase4_gestures.md).
 
 ## Repository layout
 
 ```text
 app/          Application entry points; health check implemented
-cv_engine/    Capture, tracking, palm coordinates, smoothing, loss handling, preview
+cv_engine/    Capture, tracking, palm filtering, gestures, debouncing, local preview
 backend/      Reserved for storage, sessions, authentication, and difficulty
 shared/       Configuration and logging
 tests/        Hardware-independent foundation tests
@@ -87,14 +89,14 @@ Runtime logs go to `logs/motionplay.log`, with a 2 MiB limit per file and three 
 
 ## Privacy
 
-Webcam frames stay local. The CV pipeline holds frames in memory for processing and optional preview, with no recording or network transmission. Logs contain startup events, tracking transitions, timing summaries, and errors rather than images or landmarks. Future persistent gameplay data will contain numerical session metrics. Installing dependencies requires network access; the selected hand models are bundled with MediaPipe.
+Webcam frames stay local. The CV pipeline holds frames in memory for processing and optional preview, with no recording or network transmission. Logs contain startup events, tracking transitions, confirmed gesture names, timing summaries, and errors rather than images or landmarks. Future persistent gameplay data will contain numerical session metrics. Installing dependencies requires network access; the selected hand models are bundled with MediaPipe.
 
 ## Development sequence
 
 1. Repository and Python environment (**complete**).
 2. Webcam and MediaPipe hand tracking (**implemented; local webcam verification pending**).
 3. Coordinate normalization and smoothing (**implemented; local webcam verification pending**).
-4. Gesture engine.
+4. Gesture engine (**implemented; local webcam verification pending**).
 5. Python UDP sender.
 6. Unity UDP receiver.
 7. Hand-controlled Unity cursor; verify the proof of concept.

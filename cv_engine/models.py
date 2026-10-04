@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import IntEnum
+from enum import IntEnum, StrEnum
 from typing import Literal
 
 import numpy as np
@@ -118,3 +118,40 @@ class ControlResult:
     def tracking(self) -> bool:
         """Whether at least one hand has a fresh control position."""
         return any(hand.tracking for hand in self.hands)
+
+
+class Gesture(StrEnum):
+    """Original MotionPlay protocol-ready gesture names."""
+
+    OPEN_HAND = "OPEN_HAND"
+    FIST = "FIST"
+    PINCH = "PINCH"
+    POINT = "POINT"
+    UNKNOWN = "UNKNOWN"
+
+
+@dataclass(frozen=True)
+class GestureDetection:
+    """A raw candidate and whether its landmark geometry was usable."""
+
+    candidate: Gesture = Gesture.UNKNOWN
+    valid: bool = False
+
+
+@dataclass(frozen=True)
+class HandGesture:
+    """One hand's gesture state; unavailable hands never retain an action."""
+
+    hand: Literal["left", "right"]
+    tracking: bool = False
+    candidate: Gesture = Gesture.UNKNOWN
+    gesture: Gesture = Gesture.UNKNOWN
+    consecutive_frames: int = 0
+    changed: bool = False
+
+
+@dataclass(frozen=True)
+class GestureResult:
+    """Independent gesture results for the observed physical hand labels."""
+
+    hands: tuple[HandGesture, ...] = ()

@@ -63,6 +63,31 @@ class ControlSettings:
 
 
 @dataclass(frozen=True)
+class GestureSettings:
+    """Geometry thresholds and the consecutive-frame confirmation requirement."""
+
+    debounce_frames: int = 5
+    pinch_ratio: float = 0.3
+    extended_angle: float = 160.0
+    curled_angle: float = 105.0
+    reach_ratio: float = 1.2
+
+    def __post_init__(self) -> None:
+        if type(self.debounce_frames) is not int or not 1 <= self.debounce_frames <= 60:
+            raise ConfigurationError("GESTURE_DEBOUNCE_FRAMES must be an integer from 1 to 60.")
+        if not math.isfinite(self.pinch_ratio) or not 0 < self.pinch_ratio <= 1:
+            raise ConfigurationError("GESTURE_PINCH_RATIO must be finite and in (0, 1].")
+        finite_angles = all(math.isfinite(value) for value in (self.curled_angle, self.extended_angle))
+        if not finite_angles or not 0 < self.curled_angle < self.extended_angle <= 180:
+            raise ConfigurationError(
+                "GESTURE_CURLED_ANGLE and GESTURE_EXTENDED_ANGLE must satisfy "
+                "0 < curled < extended <= 180 degrees."
+            )
+        if not math.isfinite(self.reach_ratio) or self.reach_ratio <= 1:
+            raise ConfigurationError("GESTURE_REACH_RATIO must be finite and greater than 1.")
+
+
+@dataclass(frozen=True)
 class Settings:
     """Validated application settings; connection URIs stay out of repr()."""
 
@@ -76,6 +101,7 @@ class Settings:
     camera: CameraSettings = field(default_factory=CameraSettings)
     tracking: TrackingSettings = field(default_factory=TrackingSettings)
     control: ControlSettings = field(default_factory=ControlSettings)
+    gestures: GestureSettings = field(default_factory=GestureSettings)
 
 
 def _value(values: Mapping[str, str | None], name: str, default: str) -> str:
@@ -199,5 +225,12 @@ def load_settings(
             dead_zone=_confidence(values, "SMOOTHING_DEAD_ZONE", 0.008),
             min_handedness_confidence=_confidence(values, "CONTROL_MIN_HANDEDNESS_CONFIDENCE", 0.75),
             tracking_timeout=_positive_float(values, "CONTROL_TRACKING_TIMEOUT", 0.5),
+        ),
+        gestures=GestureSettings(
+            debounce_frames=_integer(values, "GESTURE_DEBOUNCE_FRAMES", 5, 1, 60),
+            pinch_ratio=_positive_float(values, "GESTURE_PINCH_RATIO", 0.3),
+            extended_angle=_positive_float(values, "GESTURE_EXTENDED_ANGLE", 160.0),
+            curled_angle=_positive_float(values, "GESTURE_CURLED_ANGLE", 105.0),
+            reach_ratio=_positive_float(values, "GESTURE_REACH_RATIO", 1.2),
         ),
     )

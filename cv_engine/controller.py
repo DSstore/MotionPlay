@@ -1,4 +1,4 @@
-"""Run local hand tracking and Phase 3 coordinate filtering."""
+"""Run local hand tracking, palm filtering, and Phase 4 gesture processing."""
 
 from __future__ import annotations
 
@@ -25,6 +25,7 @@ def run_tracking(settings: Settings, show_preview: bool = True, max_frames: int 
 
     from cv_engine.camera import Camera
     from cv_engine.hand_tracker import HandTracker
+    from cv_engine.gesture_processor import GestureProcessor
     from cv_engine.position_processor import PositionProcessor
     from cv_engine.preview import Preview
 
@@ -36,6 +37,7 @@ def run_tracking(settings: Settings, show_preview: bool = True, max_frames: int 
         camera = stack.enter_context(Camera(settings.camera))
         tracker = stack.enter_context(HandTracker(settings.tracking, settings.camera.mirror))
         processor = PositionProcessor(settings.control)
+        gesture_processor = GestureProcessor(settings.gestures, settings.control)
         LOGGER.info("Tracking started. Frames stay local; no recording or network transmission.")
         started_at = last_report_at = perf_counter()
         previous_tracking = False
@@ -48,6 +50,7 @@ def run_tracking(settings: Settings, show_preview: bool = True, max_frames: int 
             frame_count += 1
             now = perf_counter()
             controls = processor.update(result, now)
+            gestures = gesture_processor.update(result, controls, now, frame.shape[1] / frame.shape[0])
             loop_fps = frame_count / max(now - started_at, 1e-9)
             if controls.tracking != previous_tracking:
                 LOGGER.info("Hand tracking restored." if controls.tracking else "Hand tracking lost.")
@@ -55,7 +58,7 @@ def run_tracking(settings: Settings, show_preview: bool = True, max_frames: int 
             if now - last_report_at >= 5:
                 LOGGER.info("Loop FPS %.1f; latest MediaPipe processing %.1f ms.", loop_fps, result.processing_ms)
                 last_report_at = now
-            if preview is not None and not preview.show(frame, result, loop_fps, controls):
+            if preview is not None and not preview.show(frame, result, loop_fps, controls, gestures):
                 break
         LOGGER.info("Tracking finished after %d frame(s).", frame_count)
         return frame_count
@@ -74,7 +77,7 @@ def _positive_integer(value: str) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point with actionable failures and controlled exit codes."""
-    parser = argparse.ArgumentParser(description="MotionPlay Phase 3: webcam tracking and smoothed palm control")
+    parser = argparse.ArgumentParser(description="MotionPlay Phase 4: hand tracking, palm control, and debounced gestures")
     parser.add_argument("--no-preview", action="store_true", help="Process frames without opening a window (still requires a webcam)")
     parser.add_argument("--max-frames", type=_positive_integer, help="Stop after this many processed frames")
     args = parser.parse_args(argv)
