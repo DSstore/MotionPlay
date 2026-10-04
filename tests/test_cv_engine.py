@@ -269,7 +269,7 @@ class ControllerTests(unittest.TestCase):
             TrackingResult((), 1), TrackingResult((), 1),
         ]
         with self.assertLogs("motionplay.cv_engine.controller", level="INFO") as logs:
-            self.assertEqual(run_tracking(self.settings, show_preview=False, max_frames=3), 3)
+            self.assertEqual(run_tracking(self.settings, show_preview=False, max_frames=3, send_udp=False), 3)
         messages = "\n".join(logs.output)
         self.assertEqual(messages.count("Hand tracking restored"), 1)
         self.assertEqual(messages.count("Hand tracking lost"), 1)
@@ -285,7 +285,7 @@ class ControllerTests(unittest.TestCase):
     ) -> None:
         tracker_factory.return_value.__enter__.side_effect = TrackingError("test startup failure")
         with self.assertRaises(TrackingError):
-            run_tracking(self.settings, show_preview=False, max_frames=1)
+            run_tracking(self.settings, show_preview=False, max_frames=1, send_udp=False)
         camera_factory.return_value.__exit__.assert_called_once()
 
     @patch("cv_engine.controller.configure_logging")

@@ -1,5 +1,9 @@
 # Phase 3: palm coordinates and smoothing
 
+This guide records its original development phase. On current Phase 5 source,
+the controller also sends numerical UDP states by default. Add `--no-udp` to
+the commands below for local-only checks, or follow the [Phase 5 guide](phase5_udp_sender.md).
+
 ## Pipeline and responsibilities
 
 ```text

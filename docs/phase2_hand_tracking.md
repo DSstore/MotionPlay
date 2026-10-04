@@ -1,5 +1,9 @@
 # Phase 2: webcam and MediaPipe Hands
 
+This guide records its original development phase. On current Phase 5 source,
+the controller also sends numerical UDP states by default. Add `--no-udp` to
+the commands below for local-only checks, or follow the [Phase 5 guide](phase5_udp_sender.md).
+
 ## Scope and ownership
 
 Phase 2 implements local capture and hand detection. It does not implement palm-center mapping, coordinate clamping, smoothing, gesture detection, calibration, UDP, or Unity. These follow in their planned phases.

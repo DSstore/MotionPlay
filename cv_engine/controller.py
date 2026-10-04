@@ -1,4 +1,4 @@
-"""Run local hand tracking, palm filtering, and Phase 4 gesture processing."""
+"""Run hand tracking, palm/gesture processing, and Phase 5 UDP transmission."""
 
 from __future__ import annotations
 
@@ -15,7 +15,10 @@ from shared.logger import configure_logging
 LOGGER = logging.getLogger("motionplay.cv_engine.controller")
 
 
-def run_tracking(settings: Settings, show_preview: bool = True, max_frames: int | None = None) -> int:
+def run_tracking(
+    settings: Settings, show_preview: bool = True, max_frames: int | None = None,
+    send_udp: bool = True,
+) -> int:
     """Run until user exit or the frame limit; always release opened resources.
 
     Native imports are deferred so --help does not initialize models or devices.
@@ -28,6 +31,7 @@ def run_tracking(settings: Settings, show_preview: bool = True, max_frames: int 
     from cv_engine.gesture_processor import GestureProcessor
     from cv_engine.position_processor import PositionProcessor
     from cv_engine.preview import Preview
+    from cv_engine.udp_sender import UdpSender
 
     if max_frames is not None and max_frames < 1:
         raise ValueError("max_frames must be positive.")
@@ -36,9 +40,13 @@ def run_tracking(settings: Settings, show_preview: bool = True, max_frames: int 
         preview = stack.enter_context(Preview()) if show_preview else None
         camera = stack.enter_context(Camera(settings.camera))
         tracker = stack.enter_context(HandTracker(settings.tracking, settings.camera.mirror))
+        sender = stack.enter_context(UdpSender(
+            settings.udp_host, settings.cv_to_unity_port, settings.sender, settings.camera.mirror,
+        )) if send_udp else None
         processor = PositionProcessor(settings.control)
         gesture_processor = GestureProcessor(settings.gestures, settings.control)
-        LOGGER.info("Tracking started. Frames stay local; no recording or network transmission.")
+        LOGGER.info("Tracking started. Frames stay local; UDP numerical states %s.",
+                    "enabled" if sender is not None else "disabled")
         started_at = last_report_at = perf_counter()
         previous_tracking = False
         frame_count = 0
@@ -51,12 +59,17 @@ def run_tracking(settings: Settings, show_preview: bool = True, max_frames: int 
             now = perf_counter()
             controls = processor.update(result, now)
             gestures = gesture_processor.update(result, controls, now, frame.shape[1] / frame.shape[0])
+            if sender is not None:
+                sender.send(controls, gestures, now)
             loop_fps = frame_count / max(now - started_at, 1e-9)
             if controls.tracking != previous_tracking:
                 LOGGER.info("Hand tracking restored." if controls.tracking else "Hand tracking lost.")
                 previous_tracking = controls.tracking
             if now - last_report_at >= 5:
                 LOGGER.info("Loop FPS %.1f; latest MediaPipe processing %.1f ms.", loop_fps, result.processing_ms)
+                if sender is not None:
+                    LOGGER.info("UDP totals: %d accepted, %d failed, %d frames skipped; delivery unconfirmed.",
+                                sender.sent, sender.failed, sender.skipped)
                 last_report_at = now
             if preview is not None and not preview.show(frame, result, loop_fps, controls, gestures):
                 break
@@ -77,9 +90,10 @@ def _positive_integer(value: str) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point with actionable failures and controlled exit codes."""
-    parser = argparse.ArgumentParser(description="MotionPlay Phase 4: hand tracking, palm control, and debounced gestures")
+    parser = argparse.ArgumentParser(description="MotionPlay Phase 5: hand tracking, gestures, and UDP states")
     parser.add_argument("--no-preview", action="store_true", help="Process frames without opening a window (still requires a webcam)")
     parser.add_argument("--max-frames", type=_positive_integer, help="Stop after this many processed frames")
+    parser.add_argument("--no-udp", action="store_true", help="Preview/process locally without sending UDP states")
     args = parser.parse_args(argv)
     try:
         settings = load_settings()
@@ -92,7 +106,8 @@ def main(argv: list[str] | None = None) -> int:
 
     LOGGER.info("MotionPlay CV engine starting.")
     try:
-        run_tracking(settings, show_preview=not args.no_preview, max_frames=args.max_frames)
+        run_tracking(settings, show_preview=not args.no_preview, max_frames=args.max_frames,
+                     send_udp=not args.no_udp)
     except KeyboardInterrupt:
         LOGGER.info("Tracking stopped by user.")
     except CVEngineError as error:

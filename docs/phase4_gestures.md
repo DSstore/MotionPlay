@@ -1,5 +1,9 @@
 # Phase 4: gesture engine
 
+This guide records its original development phase. On current Phase 5 source,
+the controller also sends numerical UDP states by default. Add `--no-udp` to
+the commands below for local-only checks, or follow the [Phase 5 guide](phase5_udp_sender.md).
+
 ## Scope and architecture
 
 Phase 4 adds reusable, original hand-geometry heuristics and debouncing. It sends no UDP messages, starts no Unity game, and stores no webcam frames. Existing palm filtering remains unchanged.

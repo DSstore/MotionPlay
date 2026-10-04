@@ -267,7 +267,7 @@ class IntegrationTests(unittest.TestCase):
         tracker_factory.return_value.__enter__.return_value.process.side_effect = [observations] * 5 + [TrackingResult((), 1)]
         preview = preview_factory.return_value.__enter__.return_value
         preview.show.side_effect = [True] * 5 + [False]
-        self.assertEqual(run_tracking(settings), 6)
+        self.assertEqual(run_tracking(settings, send_udp=False), 6)
         states = [call.args[4].hands[0] for call in preview.show.call_args_list]
         self.assertEqual(states[0].candidate, Gesture.OPEN_HAND)
         self.assertEqual(states[0].gesture, Gesture.UNKNOWN)

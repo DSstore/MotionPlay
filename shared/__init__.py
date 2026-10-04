@@ -1,1 +1,1 @@
-"""Configuration and logging shared by MotionPlay components."""
+"""Configuration, logging, and wire protocol shared by MotionPlay components."""

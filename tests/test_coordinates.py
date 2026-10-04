@@ -261,7 +261,7 @@ class IntegrationTests(unittest.TestCase):
         tracker_factory.return_value.__enter__.return_value.process.side_effect = [frame(hand(x=0.5)), frame()]
         preview = preview_factory.return_value.__enter__.return_value
         preview.show.side_effect = [True, False]
-        self.assertEqual(run_tracking(settings), 2)
+        self.assertEqual(run_tracking(settings, send_udp=False), 2)
         self.assertTrue(preview.show.call_args_list[0].args[3].tracking)
         self.assertFalse(preview.show.call_args_list[1].args[3].tracking)
         camera_factory.return_value.__exit__.assert_called_once()

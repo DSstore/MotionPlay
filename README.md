@@ -4,9 +4,9 @@ An experimental computer-vision motion gaming platform designed to demonstrate h
 
 **Portfolio/educational project. Not a medical device.** MotionPlay does not provide clinical rehabilitation, diagnosis, or treatment. Future reports will describe gameplay performance metrics, not medical improvement.
 
-## Current status: Phase 4
+## Current status: Phase 5
 
-This is an original implementation. Phase 1 provides the Python package structure, validated `.env` configuration, rotating local logs, an import health check, and foundation tests. Phase 2 adds webcam capture, MediaPipe Hands, reusable hand observations, and a local landmark preview. Phase 3 adds bounded palm-center control coordinates, EMA smoothing, a dead zone, handedness-confidence gating, and tracking-loss timeouts. Phase 4 adds reusable gesture classification and per-hand debouncing for `OPEN_HAND`, `FIST`, `PINCH`, `POINT`, and `UNKNOWN`. Networking, Unity gameplay, databases, authentication, and the dashboard are **not implemented yet**.
+This is an original implementation. Phase 1 provides the Python package structure, validated `.env` configuration, rotating local logs, an import health check, and foundation tests. Phase 2 adds webcam capture, MediaPipe Hands, reusable hand observations, and a local landmark preview. Phase 3 adds bounded palm-center control coordinates, EMA smoothing, a dead zone, handedness-confidence gating, and tracking-loss timeouts. Phase 4 adds reusable gesture classification and per-hand debouncing for `OPEN_HAND`, `FIST`, `PINCH`, `POINT`, and `UNKNOWN`. Phase 5 adds a paced Python UDP sender, a validated `CV_STATE` JSON protocol, and a local packet monitor. Unity reception/gameplay, databases, authentication, and the dashboard are **not implemented yet**.
 
 The cloud checks cover synthetic inputs and resource/error handling. Live tracking still requires verification on a local webcam before calling this phase hardware-validated.
 
@@ -48,7 +48,7 @@ The health check verifies Python 3.11, OpenCV, MediaPipe, PyQt6 widgets, PyMongo
 
 Direct dependencies are pinned in `requirements.txt`. OpenCV is supplied by `opencv-contrib-python`, which MediaPipe already requires, avoiding competing `cv2` installations. MediaPipe `0.10.21` is selected for its `mp.solutions.hands` API; newer MediaPipe releases use a different API. Transitive dependencies are resolver-selected, so this is not yet a complete dependency lock.
 
-### Run the Phase 4 webcam preview
+### Run the Phase 5 webcam pipeline
 
 With the environment ready, run from the project root on Windows:
 
@@ -56,7 +56,7 @@ With the environment ready, run from the project root on Windows:
 .\.venv\Scripts\python.exe -m cv_engine.controller
 ```
 
-Show your hand to the webcam. The preview draws all 21 landmarks, including wrist, fingertips, and MCP joints, and displays the physical left/right hand label, loop FPS, and MediaPipe processing time. A **white circle** marks the unfiltered palm center; a **magenta cross** marks the smoothed control position. Control X/Y remain between zero and one. Missing or rejected observations expose no active control position, and the filter resets after the configured tracking timeout. Press **Q**, **Escape**, or close the window to stop. No footage is recorded or transmitted. Set `CAMERA_INDEX=1` in `.env` if your preferred webcam is the second camera.
+Show your hand to the webcam. The preview draws all 21 landmarks, including wrist, fingertips, and MCP joints, and displays the physical left/right hand label, loop FPS, and MediaPipe processing time. A **white circle** marks the unfiltered palm center; a **magenta cross** marks the smoothed control position. Control X/Y remain between zero and one. Missing or rejected observations expose no active control position, and the filter resets after the configured tracking timeout. Press **Q**, **Escape**, or close the window to stop. No footage is recorded or transmitted; filtered numerical hand states are sent over UDP to localhost by default. Set `CAMERA_INDEX=1` in `.env` if your preferred webcam is the second camera.
 
 The preview also shows each hand's **raw candidate**, **confirmed gesture**, and consecutive-frame count. Five consecutive accepted frames confirm a change by default. A missing/low-confidence hand or unusable geometry immediately clears its gesture state. These are configurable geometric heuristics; real webcam recognition still requires local validation.
 
@@ -66,16 +66,26 @@ For an attached camera without a preview window:
 .\.venv\Scripts\python.exe -m cv_engine.controller --no-preview --max-frames 300
 ```
 
-Headless mode still requires a camera; it is not a simulated webcam. See [Phase 2 capture and tracking](docs/phase2_hand_tracking.md), [Phase 3 filtering](docs/phase3_coordinates.md), and [Phase 4 gesture rules, tuning, and acceptance checks](docs/phase4_gestures.md).
+Headless mode still requires a camera; it is not a simulated webcam. See [Phase 2 capture and tracking](docs/phase2_hand_tracking.md), [Phase 3 filtering](docs/phase3_coordinates.md), [Phase 4 gesture rules](docs/phase4_gestures.md), and [Phase 5 UDP acceptance checks](docs/phase5_udp_sender.md).
+
+### Verify UDP delivery before Unity
+
+Start this in a separate PowerShell terminal before the CV engine:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.udp_monitor --timeout 120
+```
+
+The monitor prints received `CV_STATE` packets on localhost port 5005. `CONTROL_HAND=right` selects the physical hand; set `left` in `.env` if needed. Packets contain filtered position and confirmed gesture, or an explicit lost state with null position. The sender targets 30 Hz, skips excess frames, and never queues stale states. OS-accepted sends do not prove delivery. Use `--no-udp` on the CV engine for local-only preview. See [UDP protocol](docs/udp_protocol.md) and the [Windows test guide](docs/phase5_udp_sender.md).
 
 ## Repository layout
 
 ```text
-app/          Application entry points; health check implemented
-cv_engine/    Capture, tracking, palm filtering, gestures, debouncing, local preview
+app/          Health check and local UDP diagnostic monitor
+cv_engine/    Capture, tracking, palm filtering, gestures, preview, UDP sender
 backend/      Reserved for storage, sessions, authentication, and difficulty
-shared/       Configuration and logging
-tests/        Hardware-independent foundation tests
+shared/       Configuration, logging, and wire protocol
+tests/        Hardware-independent unit and loopback integration tests
 docs/         Setup notes; architecture and protocol docs added with implementation
 ```
 
@@ -83,13 +93,13 @@ docs/         Setup notes; architecture and protocol docs added with implementat
 
 Copy `.env.example` to `.env` for local overrides. Settings load in this order: defaults, project `.env`, process environment. The loader does not mutate process variables. Relative log paths resolve from the project root. Invalid log levels, empty settings, malformed/out-of-range ports, equal send/receive ports, and unsupported MongoDB URI schemes produce helpful errors.
 
-UDP defaults are localhost ports `5005` and `5006`; these are reserved for future phases. MongoDB defaults to a local instance; Phase 1 checks the URI scheme only, not database availability or credentials. Put credentials in `.env`, never in source code. `.env`, environments, logs, recordings, and local database files are ignored by Git.
+UDP uses the literal IPv4 destination `UDP_HOST=127.0.0.1`. Port `5005` receives CV states; port `5006` is reserved for future Unity results. `UDP_SEND_FPS=30` sets the target cadence and `CONTROL_HAND=right` selects the hand. Invalid sender settings are rejected before device access. MongoDB defaults to a local instance; Phase 1 checks the URI scheme only, not database availability or credentials. Put credentials in `.env`, never in source code. `.env`, environments, logs, recordings, and local database files are ignored by Git.
 
 Runtime logs go to `logs/motionplay.log`, with a 2 MiB limit per file and three rotated backups. Configure the `motionplay` logger once at an application entry point; components can use child loggers such as `motionplay.cv_engine`. Do not log credentials or webcam frames.
 
 ## Privacy
 
-Webcam frames stay local. The CV pipeline holds frames in memory for processing and optional preview, with no recording or network transmission. Logs contain startup events, tracking transitions, confirmed gesture names, timing summaries, and errors rather than images or landmarks. Future persistent gameplay data will contain numerical session metrics. Installing dependencies requires network access; the selected hand models are bundled with MediaPipe.
+Webcam frames stay local. The CV pipeline holds frames in memory for processing and optional preview, with no recording or image transmission. UDP contains numerical hand states only and defaults to localhost. Setting a remote `UDP_HOST` sends those states to that host; `--no-udp` disables transmission. Logs contain startup events, tracking transitions, confirmed gesture names, timing summaries, UDP counters, and errors rather than images or landmarks. Future persistent gameplay data will contain numerical session metrics. Installing dependencies requires network access; the selected hand models are bundled with MediaPipe.
 
 ## Development sequence
 
@@ -97,7 +107,7 @@ Webcam frames stay local. The CV pipeline holds frames in memory for processing 
 2. Webcam and MediaPipe hand tracking (**implemented; local webcam verification pending**).
 3. Coordinate normalization and smoothing (**implemented; local webcam verification pending**).
 4. Gesture engine (**implemented; local webcam verification pending**).
-5. Python UDP sender.
+5. Python UDP sender (**implemented; live Windows webcam delivery pending**).
 6. Unity UDP receiver.
 7. Hand-controlled Unity cursor; verify the proof of concept.
 8. Reach Garden gameplay using geometric placeholders.
@@ -114,4 +124,4 @@ Webcam frames stay local. The CV pipeline holds frames in memory for processing 
 19. Complete README and architecture documentation.
 20. Portfolio polish.
 
-Demo footage, screenshots, UDP specifications, database schemas, performance measurements, challenges, and lessons learned will be added when the corresponding functionality exists. Reach Garden and future games will use original code, mechanics, and assets; no source, artwork, or UI is copied from other projects.
+Demo footage, screenshots, database schemas, performance measurements, challenges, and lessons learned will be added when the corresponding functionality exists. Reach Garden and future games will use original code, mechanics, and assets; no source, artwork, or UI is copied from other projects.

@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import os
 from dataclasses import dataclass, field
+from ipaddress import AddressValueError, IPv4Address
 from pathlib import Path
 from typing import Mapping
 
@@ -88,6 +89,31 @@ class GestureSettings:
 
 
 @dataclass(frozen=True)
+class SenderSettings:
+    """Fresh-state send limit and explicit physical hand selection."""
+
+    fps: int = 30
+    hand: str = "right"
+
+    def __post_init__(self) -> None:
+        if type(self.fps) is not int or not 1 <= self.fps <= 120:
+            raise ConfigurationError("UDP_SEND_FPS must be an integer from 1 to 120.")
+        if self.hand not in {"left", "right"}:
+            raise ConfigurationError("CONTROL_HAND must be left or right.")
+
+
+def validate_udp_host(host: str) -> str:
+    """Use a literal unicast IPv4 address to avoid DNS work in the CV loop."""
+    try:
+        address = IPv4Address(host)
+    except AddressValueError:
+        raise ConfigurationError("UDP_HOST must be an IPv4 address, e.g. 127.0.0.1.") from None
+    if address.is_unspecified or address.is_multicast or str(address) == "255.255.255.255":
+        raise ConfigurationError("UDP_HOST must be a unicast IPv4 address.")
+    return str(address)
+
+
+@dataclass(frozen=True)
 class Settings:
     """Validated application settings; connection URIs stay out of repr()."""
 
@@ -102,6 +128,7 @@ class Settings:
     tracking: TrackingSettings = field(default_factory=TrackingSettings)
     control: ControlSettings = field(default_factory=ControlSettings)
     gestures: GestureSettings = field(default_factory=GestureSettings)
+    sender: SenderSettings = field(default_factory=SenderSettings)
 
 
 def _value(values: Mapping[str, str | None], name: str, default: str) -> str:
@@ -202,7 +229,7 @@ def load_settings(
     return Settings(
         log_level=log_level,
         log_dir=log_dir.resolve(),
-        udp_host=_value(values, "UDP_HOST", "127.0.0.1"),
+        udp_host=validate_udp_host(_value(values, "UDP_HOST", "127.0.0.1")),
         cv_to_unity_port=cv_port,
         unity_to_python_port=result_port,
         mongodb_uri=mongodb_uri,
@@ -232,5 +259,9 @@ def load_settings(
             extended_angle=_positive_float(values, "GESTURE_EXTENDED_ANGLE", 160.0),
             curled_angle=_positive_float(values, "GESTURE_CURLED_ANGLE", 105.0),
             reach_ratio=_positive_float(values, "GESTURE_REACH_RATIO", 1.2),
+        ),
+        sender=SenderSettings(
+            fps=_integer(values, "UDP_SEND_FPS", 30, 1, 120),
+            hand=_value(values, "CONTROL_HAND", "right").lower(),
         ),
     )
