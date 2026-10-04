@@ -1,0 +1,6 @@
+{
+  "name": "MotionPlay.Runtime",
+  "rootNamespace": "MotionPlay.Unity",
+  "references": ["MotionPlay.Core"],
+  "autoReferenced": true
+}

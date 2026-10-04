@@ -20,7 +20,7 @@ from cv_engine.models import (
 )
 from cv_engine.udp_sender import UdpError, UdpSender, hand_state
 from shared.config import ConfigurationError, SenderSettings, load_settings
-from shared.protocol import CVState, MAX_DATAGRAM_BYTES, Position, ProtocolError, decode_cv_state
+from shared.protocol import CVState, MAX_DATAGRAM_BYTES, MAX_WIRE_INTEGER, Position, ProtocolError, decode_cv_state
 from tests.gesture_fixtures import gesture_hand
 
 
@@ -77,11 +77,14 @@ class ProtocolTests(unittest.TestCase):
                 with self.subTest(gesture=gesture, position=position):
                     state = replace(example_state(), gesture=gesture.value, position=position)
                     self.assertEqual(decode_cv_state(state.to_bytes()), state)
+        state = replace(example_state(), sequence=MAX_WIRE_INTEGER, timestamp=MAX_WIRE_INTEGER)
+        self.assertEqual(decode_cv_state(state.to_bytes()), state)
 
     def test_invalid_required_fields_and_nonfinite_positions_are_rejected(self) -> None:
         mutations = (
             {"version": True}, {"version": 2}, {"type": "SESSION_END"},
             {"timestamp": -1}, {"timestamp": 1.2}, {"sequence": True},
+            {"sequence": MAX_WIRE_INTEGER + 1}, {"timestamp": MAX_WIRE_INTEGER + 1},
             {"stream_id": "bad"}, {"hand": "both"}, {"hand": []},
             {"gesture": "WAVE"}, {"tracking": 1}, {"mirrored": "true"},
             {"confidence": -0.1}, {"confidence": float("nan")}, {"confidence": True},

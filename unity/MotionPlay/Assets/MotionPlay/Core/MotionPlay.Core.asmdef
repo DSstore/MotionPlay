@@ -1,0 +1,7 @@
+{
+  "name": "MotionPlay.Core",
+  "rootNamespace": "MotionPlay.Networking",
+  "references": [],
+  "autoReferenced": true,
+  "noEngineReferences": true
+}

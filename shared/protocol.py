@@ -10,6 +10,7 @@ from uuid import UUID
 
 PROTOCOL_VERSION = 1
 MAX_DATAGRAM_BYTES = 1200
+MAX_WIRE_INTEGER = 2**63 - 1
 GESTURES = frozenset({"OPEN_HAND", "FIST", "PINCH", "POINT", "UNKNOWN"})
 
 
@@ -61,8 +62,9 @@ class CVState:
             valid_id = False
         if not valid_id:
             raise ProtocolError("stream_id must be a canonical UUID string.")
-        if any(type(value) is not int or value < 0 for value in (self.sequence, self.timestamp)):
-            raise ProtocolError("sequence and timestamp must be nonnegative integers.")
+        if any(type(value) is not int or not 0 <= value <= MAX_WIRE_INTEGER
+               for value in (self.sequence, self.timestamp)):
+            raise ProtocolError("sequence and timestamp must be nonnegative signed-64-bit integers.")
         if (not isinstance(self.hand, str) or self.hand not in {"left", "right"}
                 or not isinstance(self.gesture, str) or self.gesture not in GESTURES):
             raise ProtocolError("Unsupported hand or gesture.")

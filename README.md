@@ -4,11 +4,11 @@ An experimental computer-vision motion gaming platform designed to demonstrate h
 
 **Portfolio/educational project. Not a medical device.** MotionPlay does not provide clinical rehabilitation, diagnosis, or treatment. Future reports will describe gameplay performance metrics, not medical improvement.
 
-## Current status: Phase 5
+## Current status: Phase 6
 
-This is an original implementation. Phase 1 provides the Python package structure, validated `.env` configuration, rotating local logs, an import health check, and foundation tests. Phase 2 adds webcam capture, MediaPipe Hands, reusable hand observations, and a local landmark preview. Phase 3 adds bounded palm-center control coordinates, EMA smoothing, a dead zone, handedness-confidence gating, and tracking-loss timeouts. Phase 4 adds reusable gesture classification and per-hand debouncing for `OPEN_HAND`, `FIST`, `PINCH`, `POINT`, and `UNKNOWN`. Phase 5 adds a paced Python UDP sender, a validated `CV_STATE` JSON protocol, and a local packet monitor. Unity reception/gameplay, databases, authentication, and the dashboard are **not implemented yet**.
+This is an original implementation. Phase 1 provides the Python package structure, validated `.env` configuration, rotating local logs, an import health check, and foundation tests. Phase 2 adds webcam capture, MediaPipe Hands, reusable hand observations, and a local landmark preview. Phase 3 adds bounded palm-center control coordinates, EMA smoothing, a dead zone, handedness-confidence gating, and tracking-loss timeouts. Phase 4 adds reusable gesture classification and per-hand debouncing for `OPEN_HAND`, `FIST`, `PINCH`, `POINT`, and `UNKNOWN`. Phase 5 adds a paced Python UDP sender, a validated `CV_STATE` JSON protocol, and a local packet monitor. Phase 6 adds a minimal Unity project, a threaded UDP receiver with packet validation, sequence ordering, receive timeout, and a numerical diagnostic panel. Cursor movement/gameplay, databases, authentication, and the dashboard are **not implemented yet**.
 
-The cloud checks cover synthetic inputs and resource/error handling. Live tracking still requires verification on a local webcam before calling this phase hardware-validated.
+Cloud checks cover the Python pipeline, compiled engine-independent C# receiver, and real Python-to-C# UDP delivery. Unity Editor, Windows Play Mode, and live webcam verification remain pending.
 
 The first milestone will connect a local webcam through Python/OpenCV/MediaPipe and UDP to a hand-controlled Unity cursor. Reliability of that milestone must be verified before building the first game, **Reach Garden**.
 
@@ -78,6 +78,12 @@ Start this in a separate PowerShell terminal before the CV engine:
 
 The monitor prints received `CV_STATE` packets on localhost port 5005. `CONTROL_HAND=right` selects the physical hand; set `left` in `.env` if needed. Packets contain filtered position and confirmed gesture, or an explicit lost state with null position. The sender targets 30 Hz, skips excess frames, and never queues stale states. OS-accepted sends do not prove delivery. Use `--no-udp` on the CV engine for local-only preview. See [UDP protocol](docs/udp_protocol.md) and the [Windows test guide](docs/phase5_udp_sender.md).
 
+### Open the Phase 6 Unity receiver
+
+In Unity Hub, add the repository's **`unity/MotionPlay`** folder and open it with **Unity 2022.3.62f3**. After packages restore and scripts compile, click **MotionPlay → Create Receiver Test Scene**, then **Play**. Start the Python CV engine in PowerShell. The Game view displays coordinates, gestures, packet counts, and tracking loss; a moving cursor comes in Phase 7.
+
+Close the Python packet monitor first; Unity needs exclusive ownership of the receive port. See the [exact Windows clicks, configuration, and acceptance checklist](docs/phase6_unity_receiver.md).
+
 ## Repository layout
 
 ```text
@@ -85,6 +91,7 @@ app/          Health check and local UDP diagnostic monitor
 cv_engine/    Capture, tracking, palm filtering, gestures, preview, UDP sender
 backend/      Reserved for storage, sessions, authentication, and difficulty
 shared/       Configuration, logging, and wire protocol
+unity/        Minimal Unity project, receiver, diagnostic panel, and C# core tests
 tests/        Hardware-independent unit and loopback integration tests
 docs/         Setup notes; architecture and protocol docs added with implementation
 ```
@@ -93,13 +100,24 @@ docs/         Setup notes; architecture and protocol docs added with implementat
 
 Copy `.env.example` to `.env` for local overrides. Settings load in this order: defaults, project `.env`, process environment. The loader does not mutate process variables. Relative log paths resolve from the project root. Invalid log levels, empty settings, malformed/out-of-range ports, equal send/receive ports, and unsupported MongoDB URI schemes produce helpful errors.
 
-UDP uses the literal IPv4 destination `UDP_HOST=127.0.0.1`. Port `5005` receives CV states; port `5006` is reserved for future Unity results. `UDP_SEND_FPS=30` sets the target cadence and `CONTROL_HAND=right` selects the hand. Invalid sender settings are rejected before device access. MongoDB defaults to a local instance; Phase 1 checks the URI scheme only, not database availability or credentials. Put credentials in `.env`, never in source code. `.env`, environments, logs, recordings, and local database files are ignored by Git.
+UDP uses the literal IPv4 destination `UDP_HOST=127.0.0.1`. Port `5005` receives CV states; port `5006` is reserved for future Unity results. `UDP_SEND_FPS=30` sets the target cadence and `CONTROL_HAND=right` selects the hand. Invalid sender settings are rejected before device access. Unity independently loads the selected port settings and `UNITY_RECEIVE_TIMEOUT=0.5` from the repository `.env` in the Editor, with process-environment overrides. MongoDB defaults to a local instance; Phase 1 checks the URI scheme only, not database availability or credentials. Put credentials in `.env`, never in source code. `.env`, environments, logs, recordings, and local database files are ignored by Git.
 
 Runtime logs go to `logs/motionplay.log`, with a 2 MiB limit per file and three rotated backups. Configure the `motionplay` logger once at an application entry point; components can use child loggers such as `motionplay.cv_engine`. Do not log credentials or webcam frames.
 
 ## Privacy
 
 Webcam frames stay local. The CV pipeline holds frames in memory for processing and optional preview, with no recording or image transmission. UDP contains numerical hand states only and defaults to localhost. Setting a remote `UDP_HOST` sends those states to that host; `--no-udp` disables transmission. Logs contain startup events, tracking transitions, confirmed gesture names, timing summaries, UDP counters, and errors rather than images or landmarks. Future persistent gameplay data will contain numerical session metrics. Installing dependencies requires network access; the selected hand models are bundled with MediaPipe.
+
+## Receiver testing
+
+Python tests run as before. The optional .NET 8 developer harness compiles the same networking core and NUnit tests used by Unity:
+
+```powershell
+dotnet run --project tests/csharp/MotionPlay.ReceiverHarness.csproj -- --noresult
+.\.venv\Scripts\python.exe -m tests.check_python_unity_udp
+```
+
+The harness does not require Unity or a webcam. Unity itself supplies Json.NET through its official package and NUnit through Test Framework; .NET 8 is not required to run MotionPlay in Unity. See the [Phase 6 guide](docs/phase6_unity_receiver.md) for Unity Test Runner instructions and validation limits.
 
 ## Development sequence
 
@@ -108,7 +126,7 @@ Webcam frames stay local. The CV pipeline holds frames in memory for processing 
 3. Coordinate normalization and smoothing (**implemented; local webcam verification pending**).
 4. Gesture engine (**implemented; local webcam verification pending**).
 5. Python UDP sender (**implemented; live Windows webcam delivery pending**).
-6. Unity UDP receiver.
+6. Unity UDP receiver (**implemented; Unity Editor/Windows verification pending**).
 7. Hand-controlled Unity cursor; verify the proof of concept.
 8. Reach Garden gameplay using geometric placeholders.
 9. Session statistics.

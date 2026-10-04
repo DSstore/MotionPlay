@@ -1,14 +1,14 @@
 # MotionPlay UDP protocol
 
 Phase 5 implements **Python → Unity `CV_STATE`**. The packet monitor is a
-diagnostic tool. Unity reception begins in Phase 6; Unity → Python result
+diagnostic tool. Phase 6 implements the Unity receiver; Unity → Python result
 messages below are reserved designs, not working endpoints.
 
 ## Transport
 
 | Direction | Destination | Default port | Status |
 |---|---|---|---|
-| Python CV → Unity | `UDP_HOST` | `CV_TO_UNITY_PORT=5005` | Sender implemented |
+| Python CV → Unity | `UDP_HOST` | `CV_TO_UNITY_PORT=5005` | Sender and receiver implemented |
 | Unity → Python backend | Future Python receiver | `UNITY_TO_PYTHON_PORT=5006` | Reserved for Phase 10 |
 
 One UDP datagram contains one UTF-8 JSON object, without a newline, length prefix,
@@ -52,8 +52,8 @@ Python's filtering timeout cannot protect a receiver when Python stops sending.
 | `type` | string | Exactly `CV_STATE` |
 | `version` | integer | Exactly `1`; booleans are invalid |
 | `stream_id` | string | Canonical UUID generated for a sender run |
-| `sequence` | integer | Nonnegative, starting at zero, increasing per send attempt |
-| `timestamp` | integer | Nonnegative Unix UTC milliseconds at serialization |
+| `sequence` | integer | 0..2^63−1, starting at zero, increasing per send attempt |
+| `timestamp` | integer | 0..2^63−1, Unix UTC milliseconds at serialization |
 | `hand` | string | Physical `left` or `right`, selected by `CONTROL_HAND` |
 | `tracking` | boolean | Fresh accepted palm available for this selected hand |
 | `position` | object or null | Filtered palm: finite x/y in [0,1], finite z |
@@ -110,8 +110,10 @@ delivery is not guaranteed, so the receiver timeout is essential.
 Use `sequence` to ignore duplicate/older packets in an active `stream_id`.
 Missing numbers can mean OS send errors or network loss. Skipped processing
 frames do not consume sequence numbers. A new run has a new stream ID and starts
-at zero. A future receiver should retire old stream IDs when adopting a restart,
-so late packets from a retired run cannot reactivate it. This is state streaming,
+at zero. The Phase 6 receiver adopts a new stream ID after the prior stream has
+timed out and retires the old ID, so late packets from a retired run cannot
+reactivate it. Retirement is bounded at 128 IDs per listener lifetime;
+disable/re-enable to reset after that limit. This is state streaming,
 not gesture event delivery; a held gesture appears repeatedly. Games must decide
 whether an action uses a gesture edge or a continuously held state.
 
@@ -126,6 +128,10 @@ booleans in numeric fields, nonfinite coordinates, and inconsistent lost states.
 Unknown extra fields are ignored to allow additive extensions. A breaking change
 requires a new protocol version. UDP JSON is unauthenticated; the local monitor
 binds only to loopback.
+
+## Phase 6 receiver implementation
+
+`unity/MotionPlay/Assets/MotionPlay/Core` validates CV packets on a socket worker, keeps only the latest state, ignores duplicate/older sequence numbers without refreshing the deadline, and retires timed-out streams when a new one takes over. It binds exclusively to **127.0.0.1**. Unity's main-thread `UdpReceiver.Update` observes fresh immutable snapshots; timeout produces a null current state. The main-thread diagnostic panel renders numerical states, with no cursor movement yet. The parser caps nesting at 16 levels and rejects comments, unquoted keys, single quotes, and nonfinite numbers. See the [Unity setup guide](phase6_unity_receiver.md).
 
 ## Reserved Unity → Python messages
 

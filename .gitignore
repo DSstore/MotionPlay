@@ -25,7 +25,7 @@ recordings/
 *.sqlite3
 *.db
 
-# Unity generated files (for later phases)
+# Unity generated files
 [Ll]ibrary/
 [Tt]emp/
 [Oo]bj/
@@ -33,6 +33,12 @@ recordings/
 [Uu]ser[Ss]ettings/
 *.csproj
 *.sln
+
+# The deliberately checked-in standalone C# validation harness is not Unity output.
+!tests/csharp/MotionPlay.ReceiverHarness.csproj
+tests/csharp/bin/
+tests/csharp/obj/
+TestResult.xml
 
 # Editor and operating-system files
 .idea/

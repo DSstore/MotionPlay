@@ -1,0 +1,7 @@
+{
+  "name": "MotionPlay.Editor",
+  "rootNamespace": "MotionPlay.Editor",
+  "references": ["MotionPlay.Core", "MotionPlay.Runtime"],
+  "includePlatforms": ["Editor"],
+  "autoReferenced": true
+}
