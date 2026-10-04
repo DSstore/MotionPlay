@@ -1,0 +1,42 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+
+# Python environments, caches, and build outputs
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Runtime logs, recordings, and local databases
+logs/
+recordings/
+*.sqlite
+*.sqlite3
+*.db
+
+# Unity generated files (for later phases)
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+*.csproj
+*.sln
+
+# Editor and operating-system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini
