@@ -50,7 +50,7 @@ by unit tests with a fake client only and has not been run against a real server
    .\.venv\Scripts\python.exe -m backend.result_receiver
    ```
 
-   Options: `--store mongo`, `--file path.jsonl`, `--port`, `--max-results`, `--timeout`.
+   Options: `--store mongo`, `--file path.jsonl`, `--port`, `--max-results`, `--timeout`. Stop it with Ctrl+C (it notices within about half a second); Ctrl+Break also works.
 2. In Unity, play **ReachGarden** and start the CV engine as in the [Phase 8 guide](phase8_reach_garden.md).
 3. Finish a round. The HUD ends with "Result saved" and the receiver logs `Result … stored`.
 4. Open `data/results.jsonl` and check the line matches the on-screen statistics.

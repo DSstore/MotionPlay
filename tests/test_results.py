@@ -6,6 +6,7 @@ import json
 import socket
 import tempfile
 import threading
+import time
 import unittest
 from dataclasses import replace
 from pathlib import Path
@@ -165,6 +166,59 @@ class ReceiverTests(unittest.TestCase):
             server.join(5)
             self.assertEqual(["stored", "duplicate"], statuses)
             self.assertEqual(1, len(path.read_text(encoding="utf-8").splitlines()))
+
+    @staticmethod
+    def free_port() -> int:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.bind(("127.0.0.1", 0))
+            return probe.getsockname()[1]
+
+    def test_stop_request_ends_serving_promptly_without_traffic(self) -> None:
+        stop = threading.Event()
+        started = time.monotonic()
+        server = threading.Thread(target=serve, args=(ResultReceiver(MagicMock()), self.free_port()),
+                                  kwargs={"stop": stop}, daemon=True)
+        server.start()
+        time.sleep(0.3)
+        stop.set()
+        server.join(3)
+        self.assertFalse(server.is_alive(), "serve must wake up on its own to notice a stop request")
+        self.assertLess(time.monotonic() - started, 3)
+
+    def test_idle_timeout_still_applies(self) -> None:
+        started = time.monotonic()
+        with self.assertRaises(socket.timeout):
+            serve(ResultReceiver(MagicMock()), self.free_port(), idle_timeout=1)
+        elapsed = time.monotonic() - started
+        self.assertGreaterEqual(elapsed, 1)
+        self.assertLess(elapsed, 3)
+
+    def test_a_sender_that_vanishes_before_the_reply_does_not_stop_the_receiver(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            port = self.free_port()
+            stop = threading.Event()
+            server = threading.Thread(
+                target=serve, args=(ResultReceiver(JsonlResultStore(Path(folder) / "r.jsonl")), port),
+                kwargs={"stop": stop}, daemon=True)
+            server.start()
+            time.sleep(0.3)
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as gone:
+                gone.sendto(make_result().to_bytes(), ("127.0.0.1", port))
+            time.sleep(0.3)  # The reply goes to a closed port; Windows reports that on the next receive.
+            statuses = []
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as client:
+                client.settimeout(2)
+                for _attempt in range(5):
+                    client.sendto(make_result().to_bytes(), ("127.0.0.1", port))
+                    try:
+                        statuses.append(json.loads(client.recvfrom(2048)[0])["status"])
+                        break
+                    except (socket.timeout, ConnectionResetError):
+                        continue
+            stop.set()
+            server.join(3)
+            self.assertEqual(["stored"], statuses)
+            self.assertFalse(server.is_alive())
 
 
 if __name__ == "__main__":

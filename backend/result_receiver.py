@@ -6,6 +6,8 @@ import argparse
 import logging
 import socket
 import sys
+import threading
+import time
 from pathlib import Path
 
 from backend.auth import AuthError
@@ -16,7 +18,8 @@ from shared.protocol import (MAX_DATAGRAM_BYTES, ProtocolError, decode_session_e
                              encode_result_ack, peek_session_id)
 
 LOGGER = logging.getLogger("motionplay.backend.result_receiver")
-DEFAULT_FILES = {"jsonl": Path("data") / "results.jsonl", "sqlite": Path("data") / "motionplay.db"}
+POLL_SECONDS = 0.5  # How often serve() wakes up so Ctrl+C and stop requests are noticed.
+DEFAULT_FILES ={"jsonl": Path("data") / "results.jsonl", "sqlite": Path("data") / "motionplay.db"}
 
 
 class ResultReceiver:
@@ -43,18 +46,35 @@ class ResultReceiver:
 
 
 def serve(receiver: ResultReceiver, port: int, *, max_results: int | None = None,
-          idle_timeout: float | None = None) -> int:
-    """Listen on loopback only. Returns how many datagrams were answered."""
+          idle_timeout: float | None = None, stop: threading.Event | None = None) -> int:
+    """Listen on loopback only until ``max_results`` are answered, ``stop`` is set, or the idle timeout
+    passes (raises ``socket.timeout``). Returns how many datagrams were answered.
+
+    The socket wakes every ``POLL_SECONDS`` instead of blocking forever: on Windows, Python cannot
+    react to Ctrl+C while it is blocked inside a socket call."""
     answered = 0
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         sock.bind(("127.0.0.1", port))
-        sock.settimeout(idle_timeout)
-        print(f"Listening for results on 127.0.0.1:{port}. Press Ctrl+C to stop.", flush=True)
-        while max_results is None or answered < max_results:
-            payload, source = sock.recvfrom(MAX_DATAGRAM_BYTES + 1)
+        sock.settimeout(POLL_SECONDS)
+        print(f"Listening for results on 127.0.0.1:{port}. Press Ctrl+C to stop "
+              "(Ctrl+Break if it does not respond).", flush=True)
+        idle_since = time.monotonic()
+        while (max_results is None or answered < max_results) and not (stop is not None and stop.is_set()):
+            try:
+                payload, source = sock.recvfrom(MAX_DATAGRAM_BYTES + 1)
+            except socket.timeout:
+                if idle_timeout is not None and time.monotonic() - idle_since >= idle_timeout:
+                    raise
+                continue
+            except ConnectionResetError:
+                continue  # Windows reports an earlier reply sent to a closed port here; nothing was lost.
+            idle_since = time.monotonic()
             reply = receiver.handle(payload)
             if reply is not None:
-                sock.sendto(reply, source)
+                try:
+                    sock.sendto(reply, source)
+                except ConnectionResetError:
+                    pass  # The sender went away; it will retry or report the result as not confirmed.
                 answered += 1
     return answered
 
