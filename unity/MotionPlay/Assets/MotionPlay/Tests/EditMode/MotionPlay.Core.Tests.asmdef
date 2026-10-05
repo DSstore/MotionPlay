@@ -1,8 +1,10 @@
 {
   "name": "MotionPlay.Core.Tests",
   "rootNamespace": "MotionPlay.Tests",
-  "references": ["MotionPlay.Core"],
+  "references": ["MotionPlay.Core", "UnityEngine.TestRunner", "UnityEditor.TestRunner"],
   "includePlatforms": ["Editor"],
-  "optionalUnityReferences": ["TestAssemblies"],
+  "overrideReferences": true,
+  "precompiledReferences": ["nunit.framework.dll", "Newtonsoft.Json.dll"],
+  "defineConstraints": ["UNITY_INCLUDE_TESTS"],
   "autoReferenced": false
 }

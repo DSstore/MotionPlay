@@ -1,7 +1,9 @@
 {
   "name": "MotionPlay.Runtime.Tests",
   "rootNamespace": "MotionPlay.Tests",
-  "references": ["MotionPlay.Core", "MotionPlay.Runtime"],
-  "optionalUnityReferences": ["TestAssemblies"],
+  "references": ["MotionPlay.Core", "MotionPlay.Runtime", "UnityEngine.TestRunner", "UnityEditor.TestRunner"],
+  "overrideReferences": true,
+  "precompiledReferences": ["nunit.framework.dll"],
+  "defineConstraints": ["UNITY_INCLUDE_TESTS"],
   "autoReferenced": false
 }
