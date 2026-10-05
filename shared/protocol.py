@@ -128,3 +128,123 @@ def decode_cv_state(payload: bytes) -> CVState:
         )
     except (ValueError, TypeError, KeyError, UnicodeError, OverflowError, RecursionError) as error:
         raise ProtocolError("Invalid CV_STATE packet; see docs/udp_protocol.md.") from error
+
+
+# ---------------------------------------------------------------------------
+# Unity -> Python result messages (Phase 10)
+# ---------------------------------------------------------------------------
+
+ACK_STATUSES = frozenset({"stored", "duplicate", "rejected", "error"})
+_RATIO_FIELDS = ("accuracy", "averageHoldStability", "pathEfficiency")
+_TIME_FIELDS = ("averageReactionTime", "averageMovementTime")
+_COUNT_FIELDS = ("score", "targetsAttempted", "targetsCompleted", "currentStreak", "bestStreak")
+
+
+def _canonical_uuid(value: object) -> bool:
+    try:
+        return isinstance(value, str) and str(UUID(value)) == value
+    except ValueError:
+        return False
+
+
+@dataclass(frozen=True)
+class SessionEnd:
+    """One finished game round. A null metric means no samples, never zero."""
+
+    stream_id: str
+    sequence: int
+    timestamp: int
+    session_id: str
+    game: str
+    hand: str
+    difficulty: str
+    startedAt: int
+    endedAt: int
+    duration: float
+    score: int
+    targetsAttempted: int
+    targetsCompleted: int
+    currentStreak: int
+    bestStreak: int
+    accuracy: float | None
+    averageReactionTime: float | None
+    averageMovementTime: float | None
+    averageHoldStability: float | None
+    pathEfficiency: float | None
+
+    def __post_init__(self) -> None:
+        if not (_canonical_uuid(self.stream_id) and _canonical_uuid(self.session_id)):
+            raise ProtocolError("stream_id and session_id must be canonical UUID strings.")
+        integers = (self.sequence, self.timestamp, self.startedAt, self.endedAt,
+                    *(getattr(self, name) for name in _COUNT_FIELDS))
+        if any(type(value) is not int or not 0 <= value <= MAX_WIRE_INTEGER for value in integers):
+            raise ProtocolError("Counts, sequence, and timestamps must be nonnegative signed-64-bit integers.")
+        if (not isinstance(self.game, str) or not 1 <= len(self.game) <= 64
+                or not isinstance(self.difficulty, str) or not 1 <= len(self.difficulty) <= 32):
+            raise ProtocolError("game and difficulty must be short nonempty strings.")
+        if not isinstance(self.hand, str) or self.hand not in {"left", "right"}:
+            raise ProtocolError("hand must be left or right.")
+        if self.endedAt < self.startedAt:
+            raise ProtocolError("endedAt must not precede startedAt.")
+        if not _number(self.duration, 0):
+            raise ProtocolError("duration must be finite and nonnegative.")
+        if self.targetsCompleted > self.targetsAttempted or self.score > self.targetsAttempted:
+            raise ProtocolError("Completed targets and score cannot exceed attempted targets.")
+        if not self.currentStreak <= self.bestStreak <= self.targetsCompleted:
+            raise ProtocolError("Streaks are inconsistent with completed targets.")
+        for name in _RATIO_FIELDS:
+            value = getattr(self, name)
+            if value is not None and not _number(value, 0, 1):
+                raise ProtocolError(f"{name} must be null or in [0, 1].")
+        for name in _TIME_FIELDS:
+            value = getattr(self, name)
+            if value is not None and not _number(value, 0):
+                raise ProtocolError(f"{name} must be null or finite and nonnegative.")
+
+    def to_document(self) -> dict[str, object]:
+        """Storage form: the validated fields without the wire envelope."""
+        return asdict(self)
+
+    def to_bytes(self) -> bytes:
+        data = {"type": "SESSION_END", "version": PROTOCOL_VERSION, **asdict(self)}
+        payload = json.dumps(data, separators=(",", ":"), allow_nan=False).encode("utf-8")
+        if len(payload) > MAX_DATAGRAM_BYTES:
+            raise ProtocolError("SESSION_END exceeds the datagram size limit.")
+        return payload
+
+
+def decode_session_end(payload: bytes) -> SessionEnd:
+    """Validate a Unity result packet. Every field is required; nullable ones as explicit null."""
+    if not payload or len(payload) > MAX_DATAGRAM_BYTES:
+        raise ProtocolError("Empty or oversized datagram.")
+    try:
+        data = json.loads(payload.decode("utf-8"), object_pairs_hook=_unique_object,
+                          parse_constant=_reject_constant)
+        if not isinstance(data, dict) or data.get("type") != "SESSION_END":
+            raise ProtocolError("Expected a SESSION_END object.")
+        if type(data.get("version")) is not int or data["version"] != PROTOCOL_VERSION:
+            raise ProtocolError("Unsupported protocol version.")
+        fields = {name: data[name] for name in SessionEnd.__dataclass_fields__}
+        return SessionEnd(**fields)
+    except (ValueError, TypeError, KeyError, UnicodeError, OverflowError, RecursionError) as error:
+        raise ProtocolError("Invalid SESSION_END packet; see docs/udp_protocol.md.") from error
+
+
+def peek_session_id(payload: bytes) -> str | None:
+    """Best-effort session_id of a malformed SESSION_END so the sender can be told to stop retrying."""
+    try:
+        data = json.loads(payload.decode("utf-8"))
+    except (ValueError, UnicodeError, RecursionError):
+        return None
+    if isinstance(data, dict) and data.get("type") == "SESSION_END" and _canonical_uuid(data.get("session_id")):
+        return data["session_id"]
+    return None
+
+
+def encode_result_ack(session_id: str, status: str) -> bytes:
+    """Reply telling Unity whether it may stop retrying; error is the only non-final status."""
+    if not _canonical_uuid(session_id) or status not in ACK_STATUSES:
+        raise ProtocolError("Invalid acknowledgement.")
+    return json.dumps({"type": "RESULT_ACK", "version": PROTOCOL_VERSION,
+                       "session_id": session_id, "status": status},
+                      separators=(",", ":")).encode("utf-8")

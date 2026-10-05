@@ -50,7 +50,10 @@ namespace MotionPlay.Unity
             }
         }
 
-        private string ResolveEnvFile()
+        private string ResolveEnvFile() => ResolveEnvFile(envFileOverride);
+
+        /// <summary>Locate the .env file shared by the receiver and the result sender.</summary>
+        internal static string ResolveEnvFile(string envFileOverride)
         {
             string path = string.IsNullOrWhiteSpace(envFileOverride)
                 ? Environment.GetEnvironmentVariable("MOTIONPLAY_ENV_FILE") : envFileOverride;

@@ -1,5 +1,6 @@
 using System;
 using MotionPlay.Games;
+using MotionPlay.Networking;
 using UnityEngine;
 
 namespace MotionPlay.Unity
@@ -32,6 +33,11 @@ namespace MotionPlay.Unity
         private SpriteRenderer baseRenderer;
         private SpriteRenderer fillRenderer;
         private string lastError;
+        private ResultSender sender;
+        private ReachGardenPhase lastPhase = ReachGardenPhase.WaitingForHand;
+        private string sessionId;
+        private string sessionHand;
+        private long sessionStartedAt;
 
         public ReachGardenGame Game => game;
 
@@ -44,6 +50,8 @@ namespace MotionPlay.Unity
         private void Awake()
         {
             BuildVisuals();
+            sender = GetComponent<ResultSender>();
+            if (sender == null) sender = gameObject.AddComponent<ResultSender>();
             try
             {
                 var settings = new ReachGardenSettings
@@ -68,7 +76,8 @@ namespace MotionPlay.Unity
             if (!TryBounds(out double halfWidth, out double halfHeight)) { SetTargetVisible(false); return; }
             game.SetBounds(halfWidth, halfHeight);
 
-            if (Input.GetKeyDown(KeyCode.R)) game.Restart();
+            bool restartPressed = Input.GetKeyDown(KeyCode.R);
+            if (restartPressed) game.Restart();
 
             bool tracking = cursor != null && cursor.isActiveAndEnabled && cursor.IsTracking;
             double x = 0, y = 0;
@@ -78,7 +87,33 @@ namespace MotionPlay.Unity
                 x = local.x; y = local.y;
             }
             game.Step(Time.deltaTime, tracking, x, y);
+            TrackSession(restartPressed);
             Render();
+        }
+
+        /// <summary>Open a session when a round starts and send its result when the round completes.</summary>
+        private void TrackSession(bool restartPressed)
+        {
+            ReachGardenPhase phase = game.Phase;
+            if (phase == ReachGardenPhase.Playing)
+            {
+                if (lastPhase != ReachGardenPhase.Playing || restartPressed)
+                {
+                    sessionId = Guid.NewGuid().ToString("D");
+                    sessionStartedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    sessionHand = null;
+                }
+                if (cursor != null && cursor.CurrentHand != null) sessionHand = cursor.CurrentHand;
+            }
+            else if (phase == ReachGardenPhase.Complete && lastPhase == ReachGardenPhase.Playing)
+            {
+                if (sessionHand == null)
+                    Debug.LogWarning("MotionPlay: round finished without a known hand; result not sent.", this);
+                else
+                    sender.Submit(SessionResult.FromStats(game.Stats, "reach_garden", sessionHand, "default",
+                        sessionId, sessionStartedAt, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+            }
+            lastPhase = phase;
         }
 
         private bool TryBounds(out double halfWidth, out double halfHeight)
@@ -171,7 +206,7 @@ namespace MotionPlay.Unity
         private void OnGUI()
         {
             if (game == null) return;
-            GUILayout.BeginArea(new Rect(Screen.width - 316, 16, 300, game.Phase == ReachGardenPhase.Complete ? 215 : 110), GUI.skin.box);
+            GUILayout.BeginArea(new Rect(Screen.width - 316, 16, 300, game.Phase == ReachGardenPhase.Complete ? 240 : 110), GUI.skin.box);
             GUILayout.Label("MotionPlay — Reach Garden");
             switch (game.Phase)
             {
@@ -189,11 +224,24 @@ namespace MotionPlay.Unity
                     GUILayout.Label("Accuracy " + Percent(stats.Accuracy) + "  |  Best streak " + stats.BestStreak);
                     GUILayout.Label("Reaction " + Seconds(stats.AverageReactionTime) + "  Movement " + Seconds(stats.AverageMovementTime));
                     GUILayout.Label("Hold stability " + Percent(stats.AverageHoldStability) + "  Path efficiency " + Percent(stats.AveragePathEfficiency));
-                    GUILayout.Label("Time " + stats.DurationSeconds.ToString("0.0") + " s");
+                    GUILayout.Label("Time " + stats.DurationSeconds.ToString("0.0") + " s  |  " + DeliveryText());
                     GUILayout.Label("Hold the cursor on the blue circle (or press R) to play again.");
                     break;
             }
             GUILayout.EndArea();
+        }
+
+        private string DeliveryText()
+        {
+            if (sender == null || sender.Error != null) return "Result not sent";
+            switch (sender.State)
+            {
+                case DeliveryState.Sending: return "Saving result (try " + sender.Attempts + ")";
+                case DeliveryState.Confirmed: return "Result saved";
+                case DeliveryState.Rejected: return "Result rejected";
+                case DeliveryState.NotConfirmed: return "Result NOT saved (receiver off?)";
+                default: return "Result not sent";
+            }
         }
 
         private static string Percent(double? value) => value.HasValue ? (value.Value * 100).ToString("0") + "%" : "-";

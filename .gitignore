@@ -46,3 +46,6 @@ TestResult.xml
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Local result store written by backend.result_receiver
+data/

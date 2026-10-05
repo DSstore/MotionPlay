@@ -10,14 +10,18 @@ namespace MotionPlay.Networking
     public sealed class ReceiverConfiguration
     {
         public int Port { get; }
+        /// <summary>Loopback port of the Python result receiver (UNITY_TO_PYTHON_PORT).</summary>
+        public int ResultPort { get; }
         public double TimeoutSeconds { get; }
 
-        public ReceiverConfiguration(int port = 5005, double timeoutSeconds = 0.5)
+        public ReceiverConfiguration(int port = 5005, double timeoutSeconds = 0.5, int resultPort = 5006)
         {
             if (port < 1024 || port > 65535) throw new ArgumentException("CV_TO_UNITY_PORT must be 1024..65535.");
             if (double.IsNaN(timeoutSeconds) || double.IsInfinity(timeoutSeconds) || timeoutSeconds <= 0)
                 throw new ArgumentException("UNITY_RECEIVE_TIMEOUT must be finite and positive.");
-            Port = port; TimeoutSeconds = timeoutSeconds;
+            if (resultPort < 1024 || resultPort > 65535) throw new ArgumentException("UNITY_TO_PYTHON_PORT must be 1024..65535.");
+            if (resultPort == port) throw new ArgumentException("CV_TO_UNITY_PORT and UNITY_TO_PYTHON_PORT must differ.");
+            Port = port; ResultPort = resultPort; TimeoutSeconds = timeoutSeconds;
         }
 
         /// <summary>Defaults, optional .env file, then process environment; no global mutation.</summary>
@@ -61,12 +65,11 @@ namespace MotionPlay.Networking
                 if (value != null) values[key] = value.Trim();
             }
             int port = PortValue(values, "CV_TO_UNITY_PORT");
-            if (port == PortValue(values, "UNITY_TO_PYTHON_PORT"))
-                throw new ArgumentException("CV_TO_UNITY_PORT and UNITY_TO_PYTHON_PORT must differ.");
+            int resultPort = PortValue(values, "UNITY_TO_PYTHON_PORT");
             if (!double.TryParse(values["UNITY_RECEIVE_TIMEOUT"], NumberStyles.Float,
                 CultureInfo.InvariantCulture, out double timeout))
                 throw new ArgumentException("UNITY_RECEIVE_TIMEOUT must be finite and positive.");
-            return new ReceiverConfiguration(port, timeout);
+            return new ReceiverConfiguration(port, timeout, resultPort);
         }
 
         private static int PortValue(Dictionary<string, string> values, string key)

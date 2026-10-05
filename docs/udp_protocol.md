@@ -9,7 +9,7 @@ messages below are reserved designs, not working endpoints.
 | Direction | Destination | Default port | Status |
 |---|---|---|---|
 | Python CV → Unity | `UDP_HOST` | `CV_TO_UNITY_PORT=5005` | Sender and receiver implemented |
-| Unity → Python backend | Future Python receiver | `UNITY_TO_PYTHON_PORT=5006` | Reserved for Phase 10 |
+| Unity → Python backend | `127.0.0.1` | `UNITY_TO_PYTHON_PORT=5006` | `SESSION_END` and `RESULT_ACK` implemented (Phase 10) |
 
 One UDP datagram contains one UTF-8 JSON object, without a newline, length prefix,
 or fragmentation at the application layer. CV packets are limited to **1,200
@@ -137,44 +137,68 @@ binds only to loopback.
 
 `MotionPlay.Control.CursorMapper` maps fresh tracked snapshots to an orthographic camera plane, with upward Y and a horizontal flip only when desired and packet mirror flags differ. Model Z does not control cursor depth. A lost or expired state yields no mapped point. `HandCursorController` applies that point on Unity's main thread and hides its renderer when no current position exists. The disc radius plus an edge margin keeps it within the camera view. No wire fields or version changed. See the [cursor proof-of-concept guide](phase7_hand_cursor.md).
 
-## Reserved Unity → Python messages
+## Unity → Python result messages (Phase 10)
 
-The following describes the intended fields for Phase 10. They are not encoded,
-decoded, sent, or persisted by Phase 5. Final schemas, validation, and result
-delivery/idempotency behavior will be finalized alongside session implementation.
-Use the same `type`, `version`, `stream_id`, `sequence`, and UTC-millisecond
-`timestamp` envelope, plus a session UUID and game identifier. Unity's stream ID
-and sequence belong to its own sender, independently of the CV stream.
+Unity sends one `SESSION_END` datagram when a round completes; the Python result
+receiver replies to the sender's address with a `RESULT_ACK`. The same limits as
+`CV_STATE` apply: UTF-8 JSON, one object, at most 1,200 bytes, no duplicate keys,
+no `NaN`/`Infinity`. Unity's `stream_id` and `sequence` belong to its own sender,
+independently of the CV stream. Every field below is required; metrics with no
+samples are sent as explicit `null`, never zero.
 
-| Type | Purpose | Planned payload fields |
+| Field | Type | Rule |
 |---|---|---|
-| `GAME_STATE` | Game lifecycle/status | `session_id`, `game`, `state` (ready/calibrating/playing/paused/complete) |
-| `SESSION_UPDATE` | Cumulative metrics snapshot | `session_id`, `game`, `score`, `targetsAttempted`, `targetsCompleted`, `averageReactionTime`, `accuracy` |
-| `SESSION_END` | Final session summary | Update fields plus `startedAt`, `endedAt`, `duration`, `hand`, `difficulty`, `averageMovementTime`, `averageHoldStability`, `currentStreak`, `bestStreak`, `pathEfficiency` |
+| `type`, `version` | string, int | `"SESSION_END"`, `1` |
+| `stream_id`, `session_id` | string | Canonical UUIDs; `session_id` identifies the round and makes repeats idempotent |
+| `sequence`, `timestamp` | int | Nonnegative; timestamp is UTC milliseconds |
+| `game`, `difficulty` | string | 1 to 64 / 1 to 32 characters (`reach_garden`, `default`) |
+| `hand` | string | `left` or `right`, the hand that played |
+| `startedAt`, `endedAt` | int | UTC milliseconds, `endedAt` not before `startedAt` |
+| `duration` | number | Seconds, at least 0 |
+| `score`, `targetsAttempted`, `targetsCompleted`, `currentStreak`, `bestStreak` | int | At least 0; completed and score at most attempted; `currentStreak` ≤ `bestStreak` ≤ completed |
+| `accuracy`, `averageHoldStability`, `pathEfficiency` | number or null | In [0, 1] |
+| `averageReactionTime`, `averageMovementTime` | number or null | Seconds, at least 0 |
 
-Example **reserved** update:
+Metric definitions are in [Phase 9](phase9_session_stats.md). `GAME_STATE` and
+`SESSION_UPDATE` from the earlier plan are not implemented; only final results are sent.
 
 ```json
 {
-  "type": "SESSION_UPDATE",
+  "type": "SESSION_END",
   "version": 1,
   "stream_id": "b2e222b2-2222-4222-8222-222222222222",
-  "sequence": 12,
-  "timestamp": 1770000001000,
+  "sequence": 0,
+  "timestamp": 1770000060000,
   "session_id": "c3e333c3-3333-4333-8333-333333333333",
   "game": "reach_garden",
-  "score": 8,
-  "targetsAttempted": 10,
-  "targetsCompleted": 8,
-  "averageReactionTime": 1.42,
-  "accuracy": 0.80
+  "hand": "right",
+  "difficulty": "default",
+  "startedAt": 1770000000000,
+  "endedAt": 1770000060000,
+  "duration": 60.0,
+  "score": 6,
+  "targetsAttempted": 8,
+  "targetsCompleted": 6,
+  "currentStreak": 2,
+  "bestStreak": 4,
+  "accuracy": 0.75,
+  "averageReactionTime": 0.42,
+  "averageMovementTime": 1.1,
+  "averageHoldStability": 0.9,
+  "pathEfficiency": null
 }
 ```
 
-Durations/reaction/movement time will use seconds; started/ended timestamps use
-UTC milliseconds. Accuracy and stability will use [0,1]. Metrics with no samples
-should be null rather than fabricated zero. Exact definitions will be established
-in Phase 9. These are gameplay metrics, with no medical interpretation.
-Cumulative updates and session IDs permit deduplication, but UDP alone cannot
-guarantee final-result persistence. Phase 10 must resolve result delivery before
-database integration; a single SESSION_END send will not count as reliable storage.
+The reply is `{"type":"RESULT_ACK","version":1,"session_id":"…","status":"…"}`:
+
+| Status | Meaning | Unity |
+|---|---|---|
+| `stored` | Saved now | Stop retrying, show "Result saved" |
+| `duplicate` | This `session_id` was already saved | Stop retrying, show "Result saved" |
+| `rejected` | The packet failed validation | Stop retrying, show "Result rejected" |
+| `error` | Valid, but storage failed | Keep retrying |
+
+UDP itself guarantees nothing, so delivery is confirmed only by an acknowledgement.
+Unity sends up to 5 times, 1 second apart. With no acknowledgement it reports
+"Result NOT saved" and does not pretend otherwise; a round that ended while the
+receiver was off is not kept for later.

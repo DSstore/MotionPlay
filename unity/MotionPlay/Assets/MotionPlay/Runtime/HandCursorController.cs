@@ -21,6 +21,8 @@ namespace MotionPlay.Unity
 
         public Vector3? CurrentPosition { get; private set; }
         public bool IsTracking => CurrentPosition.HasValue;
+        /// <summary>Physical hand driving the cursor (left or right) while tracking, otherwise null.</summary>
+        public string CurrentHand { get; private set; }
         public string Status { get; private set; } = "Waiting for tracking";
         public bool MirrorControl => mirrorControl;
 
@@ -62,7 +64,8 @@ namespace MotionPlay.Unity
             transform.localScale = Vector3.one * (2 * cursorRadius);
             CurrentPosition = position;
             visual.enabled = true;
-            Status = "Tracking " + receiver.CurrentState.Hand;
+            CurrentHand = receiver.CurrentState.Hand;
+            Status = "Tracking " + CurrentHand;
         }
 
         private bool TryView(out CursorArea area)
@@ -98,6 +101,7 @@ namespace MotionPlay.Unity
         private void Hide(string status)
         {
             CurrentPosition = null;
+            CurrentHand = null;
             if (visual != null) visual.enabled = false;
             Status = status;
         }
