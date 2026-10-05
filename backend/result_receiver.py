@@ -8,7 +8,9 @@ import socket
 import sys
 from pathlib import Path
 
+from backend.auth import AuthError
 from backend.storage import STORE_KINDS, ResultStore, StorageError, open_store
+from backend.users import add_user_arguments, log_in
 from shared.config import PROJECT_ROOT, ConfigurationError, load_settings
 from shared.protocol import (MAX_DATAGRAM_BYTES, ProtocolError, decode_session_end,
                              encode_result_ack, peek_session_id)
@@ -20,8 +22,9 @@ DEFAULT_FILES = {"jsonl": Path("data") / "results.jsonl", "sqlite": Path("data")
 class ResultReceiver:
     """Socket-free core: bytes in, optional acknowledgement bytes out."""
 
-    def __init__(self, store: ResultStore) -> None:
+    def __init__(self, store: ResultStore, user_id: str | None = None) -> None:
         self._store = store
+        self._user_id = user_id  # Every stored round belongs to this player; None means unassigned.
 
     def handle(self, payload: bytes) -> bytes | None:
         try:
@@ -31,7 +34,7 @@ class ResultReceiver:
             session_id = peek_session_id(payload)
             return encode_result_ack(session_id, "rejected") if session_id else None
         try:
-            created = self._store.save(result)
+            created = self._store.save(result, self._user_id)
         except StorageError as error:
             LOGGER.error("Result %s not stored: %s", result.session_id, error)
             return encode_result_ack(result.session_id, "error")
@@ -77,6 +80,7 @@ def add_store_arguments(parser: argparse.ArgumentParser) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="MotionPlay Unity result receiver")
     add_store_arguments(parser)
+    add_user_arguments(parser)
     parser.add_argument("--port", type=int, help="Override UNITY_TO_PYTHON_PORT")
     parser.add_argument("--max-results", type=int, help="Exit after answering this many datagrams")
     parser.add_argument("--timeout", type=float, help="Exit after this many idle seconds")
@@ -88,12 +92,21 @@ def main(argv: list[str] | None = None) -> int:
         port = args.port if args.port is not None else settings.unity_to_python_port
         if not 1024 <= port <= 65535:
             raise ConfigurationError("Result port must be from 1024 to 65535.")
+        user = log_in(args.user, args.users_db) if args.user else None
         store = store_from_args(args.store, args.file, settings)
-        serve(ResultReceiver(store), port, max_results=args.max_results, idle_timeout=args.timeout)
+        if user is not None:
+            print(f"Saving rounds for {user.username}.", flush=True)
+        else:
+            print("No --user given: rounds are saved without a player.", flush=True)
+        serve(ResultReceiver(store, user.user_id if user else None), port,
+              max_results=args.max_results, idle_timeout=args.timeout)
     except socket.timeout:
         print("No result arrived before the idle timeout.", file=sys.stderr)
         return 1
-    except (ConfigurationError, StorageError, OSError) as error:
+    except AuthError as error:
+        print(f"Login failed: {error}", file=sys.stderr)
+        return 1
+    except (ConfigurationError, StorageError, OSError, EOFError) as error:
         print(f"Result receiver error: {error}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:

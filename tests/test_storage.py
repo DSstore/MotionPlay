@@ -5,15 +5,23 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import sqlite3
 import tempfile
+import types
 import unittest
 from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
 
 from backend import sessions
+from backend.auth import UserStore
 from backend.storage import (JsonlResultStore, MongoResultStore, SqliteResultStore, StorageError, open_store)
 from tests.test_results import make_result
+
+
+def stored(result, user_id=None) -> dict:
+    """The document a store should hand back for a saved round."""
+    return {**result.to_document(), "user_id": user_id}
 
 
 class FakeCursor:
@@ -69,6 +77,12 @@ class FakeCollection:
     def count_documents(self, query: dict) -> int:
         return sum(1 for d in self.documents if self._match(d, query))
 
+    def update_many(self, query: dict, update: dict):
+        changed = [d for d in self.documents if self._match(d, query)]
+        for document in changed:
+            document.update(update["$set"])
+        return types.SimpleNamespace(modified_count=len(changed))
+
 
 class FakeDatabase:
     def __init__(self, collection: FakeCollection) -> None:
@@ -107,7 +121,7 @@ class StoreContract:
         result = make_result()
         self.assertTrue(self.store.save(result))
         self.assertFalse(self.store.save(result))
-        self.assertEqual(result.to_document(), self.store.get(result.session_id))
+        self.assertEqual(stored(result), self.store.get(result.session_id))
         self.assertIsNone(self.store.get(str(uuid4())))
         self.assertEqual(1, self.store.count())
 
@@ -135,6 +149,30 @@ class StoreContract:
         self.assertEqual(3, self.store.count())
         self.assertEqual([], self.store.list_sessions(game="nothing"))
 
+    def test_rounds_belong_to_players(self) -> None:
+        mine, theirs, nobody = make_result(), make_result(), make_result()
+        self.assertTrue(self.store.save(mine, "user-a"))
+        self.assertTrue(self.store.save(theirs, "user-b"))
+        self.assertTrue(self.store.save(nobody))
+        self.assertEqual("user-a", self.store.get(mine.session_id)["user_id"])
+        self.assertIsNone(self.store.get(nobody.session_id)["user_id"])
+        self.assertEqual([mine.session_id], [d["session_id"] for d in self.store.list_sessions(user_id="user-a")])
+        self.assertEqual(1, self.store.count(user_id="user-b"))
+        self.assertEqual(0, self.store.count(user_id="user-c"))
+        self.assertFalse(self.store.save(mine, "user-b"), "a repeat never changes the owner")
+        self.assertEqual("user-a", self.store.get(mine.session_id)["user_id"])
+
+    def test_claiming_assigns_only_unassigned_rounds(self) -> None:
+        owned, free_one, free_two = make_result(), make_result(), make_result()
+        self.store.save(owned, "user-a")
+        self.store.save(free_one)
+        self.store.save(free_two)
+        self.assertEqual(2, self.store.claim_unassigned("user-b"))
+        self.assertEqual(0, self.store.claim_unassigned("user-b"))
+        self.assertEqual("user-a", self.store.get(owned.session_id)["user_id"])
+        self.assertEqual("user-b", self.store.get(free_one.session_id)["user_id"])
+        self.assertEqual(2, self.store.count(user_id="user-b"))
+
     def test_rejects_a_bad_limit(self) -> None:
         for limit in (0, -1, True, 2.5):
             with self.subTest(limit=limit), self.assertRaises(ValueError):
@@ -157,7 +195,19 @@ class JsonlStoreContract(StoreContract, unittest.TestCase):
         self.store.save(result)
         reopened = JsonlResultStore(self.path)
         self.assertFalse(reopened.save(result))
-        self.assertEqual(result.to_document(), reopened.get(result.session_id))
+        self.assertEqual(stored(result), reopened.get(result.session_id))
+
+
+    def test_claim_persists_and_keeps_unreadable_lines(self) -> None:
+        result = make_result()
+        self.store.save(result)
+        with self.path.open("a", encoding="utf-8") as handle:
+            handle.write("garbage line\n")
+        reopened = JsonlResultStore(self.path)
+        self.assertEqual(1, reopened.claim_unassigned("user-a"))
+        self.assertIn("garbage line", self.path.read_text(encoding="utf-8"))
+        self.assertEqual("user-a", JsonlResultStore(self.path).get(result.session_id)["user_id"])
+        self.assertFalse(self.path.with_suffix(".jsonl.tmp").exists())
 
 
 class SqliteStoreContract(StoreContract, unittest.TestCase):
@@ -171,7 +221,22 @@ class SqliteStoreContract(StoreContract, unittest.TestCase):
         reopened = SqliteResultStore(self.path)
         self.addCleanup(reopened.close)
         self.assertFalse(reopened.save(result))
-        self.assertEqual(result.to_document(), reopened.get(result.session_id))
+        self.assertEqual(stored(result), reopened.get(result.session_id))
+
+    def test_a_phase_11_database_gains_the_player_column(self) -> None:
+        old = Path(self.folder.name) / "old.db"
+        columns = ", ".join(f"{name} TEXT" for name in make_result().to_document())
+        with sqlite3.connect(old) as db:
+            db.execute(f"CREATE TABLE sessions ({columns})")
+            document = make_result().to_document()
+            db.execute(f"INSERT INTO sessions VALUES ({', '.join('?' for _ in document)})", list(document.values()))
+        db.close()
+        upgraded = SqliteResultStore(old)
+        self.addCleanup(upgraded.close)
+        self.assertEqual(1, upgraded.count())
+        self.assertIsNone(upgraded.get(document["session_id"])["user_id"])
+        self.assertEqual(1, upgraded.claim_unassigned("user-a"))
+        SqliteResultStore(old).close()  # Opening a second time must not fail on the existing column.
 
     def test_failures_become_storage_errors(self) -> None:
         with self.assertRaises(StorageError):
@@ -196,12 +261,15 @@ class MongoStoreContract(StoreContract, unittest.TestCase):
         self.client.collection.find = broken
         self.client.collection.find_one = broken
         self.client.collection.count_documents = broken
+        self.client.collection.update_many = broken
         with self.assertRaises(StorageError):
             self.store.list_sessions()
         with self.assertRaises(StorageError):
             self.store.get(str(uuid4()))
         with self.assertRaises(StorageError):
             self.store.count()
+        with self.assertRaises(StorageError):
+            self.store.claim_unassigned("user-a")
 
 
 class FactoryTests(unittest.TestCase):
@@ -216,10 +284,11 @@ class FactoryTests(unittest.TestCase):
 
 
 class SessionsCliTests(unittest.TestCase):
-    def run_cli(self, *argv: str) -> tuple[int, str]:
+    def run_cli(self, *argv: str, passwords: tuple[str, ...] = ()) -> tuple[int, str]:
+        answers = iter(passwords)
         out = io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
-            code = sessions.main(list(argv))
+            code = sessions.main(list(argv), prompt=lambda _text: next(answers), rounds=4)
         return code, out.getvalue()
 
     def test_import_then_list_shows_dashes_for_missing_metrics(self) -> None:
@@ -234,11 +303,13 @@ class SessionsCliTests(unittest.TestCase):
             source.write_text("\n".join(lines), encoding="utf-8")
             db = str(Path(folder) / "m.db")
 
-            code, output = self.run_cli("import", str(source), "--store", "sqlite", "--file", db)
+            code, output = self.run_cli("import", str(source), "--store", "sqlite", "--file", db,
+                                        "--users-db", db)
             self.assertEqual(0, code)
             self.assertIn("Imported 2 new, 1 already present, 2 invalid", output)
 
-            code, output = self.run_cli("list", "--store", "sqlite", "--file", db, "--limit", "5")
+            code, output = self.run_cli("list", "--all", "--store", "sqlite", "--file", db,
+                                        "--users-db", db, "--limit", "5")
             self.assertEqual(0, code)
             rows = output.splitlines()
             self.assertIn("2 session(s) stored", rows[0])
@@ -247,17 +318,71 @@ class SessionsCliTests(unittest.TestCase):
             self.assertIn("react       -", rows[2])
             self.assertIn(empty.session_id, rows[2])
 
+    def test_players_log_in_to_see_and_claim_their_rounds(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            db = Path(folder) / "m.db"
+            users = UserStore(db, rounds=4)
+            alice = users.create_user("alice", "alice-password")
+            bob = users.create_user("bob", "bob-password-1")
+            users.close()
+            store = SqliteResultStore(db)
+            old, mine, theirs = make_result(), make_result(), make_result()
+            store.save(old)
+            store.save(mine, alice.user_id)
+            store.save(theirs, bob.user_id)
+            store.close()
+            base = ("--store", "sqlite", "--file", str(db), "--users-db", str(db))
+
+            code, output = self.run_cli("list", "--user", "alice", *base, passwords=("alice-password",))
+            self.assertEqual(0, code)
+            self.assertIn("1 session(s) stored", output)
+            self.assertIn(mine.session_id, output)
+            self.assertNotIn(theirs.session_id, output)
+
+            self.assertEqual(1, self.run_cli("list", "--user", "alice", *base, passwords=("wrong-password",))[0])
+            self.assertEqual(1, self.run_cli("list", *base)[0], "needs --user or --all")
+
+            code, output = self.run_cli("claim", "--user", "bob", *base, passwords=("bob-password-1",))
+            self.assertIn("Assigned 1 unassigned round(s) to bob", output)
+            output = self.run_cli("list", "--all", *base)[1]
+            self.assertIn("3 session(s) stored", output)
+            check = SqliteResultStore(db)
+            try:
+                self.assertEqual(bob.user_id, check.get(old.session_id)["user_id"])
+                self.assertEqual(alice.user_id, check.get(mine.session_id)["user_id"])
+            finally:
+                check.close()
+
+    def test_import_keeps_the_saved_owner_and_assigns_the_rest(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "old.jsonl"
+            owned, free = make_result(), make_result()
+            source.write_text(json.dumps({**owned.to_document(), "user_id": "someone"}) + "\n"
+                              + json.dumps(free.to_document()) + "\n", encoding="utf-8")
+            store = SqliteResultStore(Path(folder) / "m.db")
+            try:
+                self.assertEqual((2, 0, 0), sessions.import_jsonl(source, store, "default-owner"))
+                self.assertEqual("someone", store.get(owned.session_id)["user_id"])
+                self.assertEqual("default-owner", store.get(free.session_id)["user_id"])
+            finally:
+                store.close()
+
     def test_bad_arguments_and_missing_source_fail_cleanly(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             db = str(Path(folder) / "m.db")
-            self.assertEqual(1, self.run_cli("list", "--store", "sqlite", "--file", db, "--limit", "0")[0])
+            self.assertEqual(1, self.run_cli("list", "--all", "--store", "sqlite", "--file", db,
+                                             "--users-db", db, "--limit", "0")[0])
             self.assertEqual(1, self.run_cli("import", str(Path(folder) / "missing.jsonl"),
-                                             "--store", "sqlite", "--file", db)[0])
+                                             "--store", "sqlite", "--file", db, "--users-db", db)[0])
 
     def test_format_row_never_invents_zero(self) -> None:
-        row = sessions.format_row({**make_result(accuracy=None, averageReactionTime=None).to_document()})
+        row = sessions.format_row(stored(make_result(accuracy=None, averageReactionTime=None)),
+                                  {"someone": "alice"})
         self.assertIn("acc    -", row)
         self.assertNotIn("0.00s", row)
+        self.assertIn(" -  ", row)  # No player shows as a dash.
+        owned = sessions.format_row(stored(make_result(), "someone"), {"someone": "alice"})
+        self.assertIn("alice", owned)
 
 
 if __name__ == "__main__":

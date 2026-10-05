@@ -98,5 +98,5 @@ save, round trip, nulls, ordering, limit and filter, bad limits, copies, reopeni
 database failures), the factory, and the `sessions` command including import with
 duplicates and invalid lines. Unity is unchanged in this phase.
 
-Authentication and per-user history come next; sessions are not yet tied to a user.
+Rounds are tied to players from [Phase 12](phase12_accounts.md) on.
 This is a gameplay prototype for a portfolio project, not a medical device or therapy tool.

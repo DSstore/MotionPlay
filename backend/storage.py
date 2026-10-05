@@ -1,8 +1,9 @@
 """Session storage behind one interface; callers never know which backend they have.
 
 Every store keeps one document per finished round, keyed by ``session_id``. Documents are plain
-dicts holding exactly the validated SESSION_END fields (see ``SessionEnd.to_document``).
-Metrics with no samples are stored as null, never zero.
+dicts holding the validated SESSION_END fields (see ``SessionEnd.to_document``) plus ``user_id``,
+the player the round belongs to (null if no one was logged in). Metrics with no samples are
+stored as null, never zero.
 """
 
 from __future__ import annotations
@@ -25,16 +26,21 @@ class StorageError(RuntimeError):
 
 
 class ResultStore(Protocol):
-    def save(self, result: SessionEnd) -> bool:
-        """Persist the result. Return True if newly stored, False if the session_id already existed."""
+    def save(self, result: SessionEnd, user_id: str | None = None) -> bool:
+        """Persist the result for ``user_id``. Return True if newly stored, False if the session_id
+        already existed (the first owner is kept)."""
 
     def get(self, session_id: str) -> dict | None:
         """The stored document, or None."""
 
-    def list_sessions(self, *, game: str | None = None, limit: int = 20) -> list[dict]:
+    def list_sessions(self, *, game: str | None = None, user_id: str | None = None,
+                      limit: int = 20) -> list[dict]:
         """Stored documents, most recently ended first, at most ``limit`` (at least 1)."""
 
-    def count(self, *, game: str | None = None) -> int: ...
+    def count(self, *, game: str | None = None, user_id: str | None = None) -> int: ...
+
+    def claim_unassigned(self, user_id: str) -> int:
+        """Give every round that has no player to ``user_id``. Returns how many were claimed."""
 
     def close(self) -> None: ...
 
@@ -63,10 +69,10 @@ class JsonlResultStore:
         except OSError as error:
             raise StorageError(f"Cannot prepare results file: {error.strerror or error}") from error
 
-    def save(self, result: SessionEnd) -> bool:
+    def save(self, result: SessionEnd, user_id: str | None = None) -> bool:
         if result.session_id in self._documents:
             return False
-        document = result.to_document()
+        document = {**result.to_document(), "user_id": user_id}
         line = json.dumps(document, separators=(",", ":"), allow_nan=False) + "\n"
         try:
             with self._path.open("a", encoding="utf-8", newline="\n") as handle:
@@ -80,16 +86,49 @@ class JsonlResultStore:
 
     def get(self, session_id: str) -> dict | None:
         document = self._documents.get(session_id)
-        return dict(document) if document is not None else None
+        return {"user_id": None, **document} if document is not None else None
 
-    def list_sessions(self, *, game: str | None = None, limit: int = 20) -> list[dict]:
+    def _matches(self, game: str | None, user_id: str | None) -> list[dict]:
+        return [d for d in self._documents.values()
+                if (game is None or d.get("game") == game)
+                and (user_id is None or d.get("user_id") == user_id)]
+
+    def list_sessions(self, *, game: str | None = None, user_id: str | None = None,
+                      limit: int = 20) -> list[dict]:
         _check_limit(limit)
-        matches = [d for d in self._documents.values()
-                   if (game is None or d.get("game") == game) and isinstance(d.get("endedAt"), int)]
-        return [dict(d) for d in sorted(matches, key=_NEWEST_FIRST, reverse=True)[:limit]]
+        matches = [d for d in self._matches(game, user_id) if isinstance(d.get("endedAt"), int)]
+        return [{"user_id": None, **d} for d in sorted(matches, key=_NEWEST_FIRST, reverse=True)[:limit]]
 
-    def count(self, *, game: str | None = None) -> int:
-        return sum(1 for d in self._documents.values() if game is None or d.get("game") == game)
+    def count(self, *, game: str | None = None, user_id: str | None = None) -> int:
+        return len(self._matches(game, user_id))
+
+    def claim_unassigned(self, user_id: str) -> int:
+        """Rewrite the file through a temporary copy so an interruption cannot lose rounds.
+        Lines that are not valid rounds are kept exactly as they are."""
+        claimed = 0
+        temporary = self._path.with_suffix(self._path.suffix + ".tmp")
+        try:
+            with self._path.open("r", encoding="utf-8") as source, \
+                    temporary.open("w", encoding="utf-8", newline="\n") as target:
+                for line in source:
+                    try:
+                        document = json.loads(line)
+                        if document["session_id"] in self._documents and document.get("user_id") is None:
+                            document["user_id"] = user_id
+                            line = json.dumps(document, separators=(",", ":"), allow_nan=False) + "\n"
+                            claimed += 1
+                    except (ValueError, KeyError, TypeError):
+                        pass
+                    target.write(line)
+                target.flush()
+                os.fsync(target.fileno())
+            os.replace(temporary, self._path)
+        except OSError as error:
+            raise StorageError(f"Cannot rewrite results file: {error.strerror or error}") from error
+        for document in self._documents.values():
+            if document.get("user_id") is None:
+                document["user_id"] = user_id
+        return claimed
 
     def close(self) -> None:
         pass
@@ -111,19 +150,25 @@ class SqliteResultStore:
                 base = str(field.type).split("|")[0].strip()  # "float | None" -> "float"; nulls stay allowed
                 key = " PRIMARY KEY" if name == "session_id" else ""
                 columns.append(f"{name} {self._TYPES[base]}{key}")
+            columns.append("user_id TEXT")
             self._db.execute(f"CREATE TABLE IF NOT EXISTS sessions ({', '.join(columns)})")
+            existing = {row[1] for row in self._db.execute("PRAGMA table_info(sessions)")}
+            if "user_id" not in existing:  # Created before Phase 12: earlier rounds stay unassigned.
+                self._db.execute("ALTER TABLE sessions ADD COLUMN user_id TEXT")
             self._db.execute("CREATE INDEX IF NOT EXISTS sessions_ended ON sessions (endedAt DESC)")
+            self._db.execute("CREATE INDEX IF NOT EXISTS sessions_user ON sessions (user_id)")
             self._db.commit()
         except (OSError, sqlite3.Error) as error:
             raise StorageError(f"Cannot open the SQLite database: {error}") from error
 
-    def save(self, result: SessionEnd) -> bool:
-        document = result.to_document()
-        sql = (f"INSERT OR IGNORE INTO sessions ({', '.join(_FIELDS)}) "
-               f"VALUES ({', '.join('?' for _ in _FIELDS)})")
+    def save(self, result: SessionEnd, user_id: str | None = None) -> bool:
+        document = {**result.to_document(), "user_id": user_id}
+        names = (*_FIELDS, "user_id")
+        sql = (f"INSERT OR IGNORE INTO sessions ({', '.join(names)}) "
+               f"VALUES ({', '.join('?' for _ in names)})")
         try:
             with self._db:
-                cursor = self._db.execute(sql, [document[name] for name in _FIELDS])
+                cursor = self._db.execute(sql, [document[name] for name in names])
         except sqlite3.Error as error:
             raise StorageError(f"SQLite write failed: {error}") from error
         return cursor.rowcount == 1
@@ -135,9 +180,21 @@ class SqliteResultStore:
             raise StorageError(f"SQLite read failed: {error}") from error
         return dict(row) if row is not None else None
 
-    def list_sessions(self, *, game: str | None = None, limit: int = 20) -> list[dict]:
+    @staticmethod
+    def _where(game: str | None, user_id: str | None) -> tuple[str, list]:
+        clauses, args = [], []
+        if game is not None:
+            clauses.append("game = ?")
+            args.append(game)
+        if user_id is not None:
+            clauses.append("user_id = ?")
+            args.append(user_id)
+        return ("WHERE " + " AND ".join(clauses) if clauses else ""), args
+
+    def list_sessions(self, *, game: str | None = None, user_id: str | None = None,
+                      limit: int = 20) -> list[dict]:
         _check_limit(limit)
-        where, args = ("WHERE game = ?", [game]) if game is not None else ("", [])
+        where, args = self._where(game, user_id)
         try:
             rows = self._db.execute(
                 f"SELECT * FROM sessions {where} ORDER BY endedAt DESC, session_id DESC LIMIT ?",
@@ -146,12 +203,20 @@ class SqliteResultStore:
             raise StorageError(f"SQLite read failed: {error}") from error
         return [dict(row) for row in rows]
 
-    def count(self, *, game: str | None = None) -> int:
-        where, args = ("WHERE game = ?", [game]) if game is not None else ("", [])
+    def count(self, *, game: str | None = None, user_id: str | None = None) -> int:
+        where, args = self._where(game, user_id)
         try:
             return self._db.execute(f"SELECT COUNT(*) FROM sessions {where}", args).fetchone()[0]
         except sqlite3.Error as error:
             raise StorageError(f"SQLite read failed: {error}") from error
+
+    def claim_unassigned(self, user_id: str) -> int:
+        try:
+            with self._db:
+                return self._db.execute("UPDATE sessions SET user_id = ? WHERE user_id IS NULL",
+                                        (user_id,)).rowcount
+        except sqlite3.Error as error:
+            raise StorageError(f"SQLite write failed: {error}") from error
 
     def close(self) -> None:
         self._db.close()
@@ -172,13 +237,14 @@ class MongoResultStore:
             self._collection = client[database][self.COLLECTION]
             self._collection.create_index("session_id", unique=True)
             self._collection.create_index([("endedAt", -1)])
+            self._collection.create_index("user_id")
         except Exception as error:  # pymongo raises several unrelated connection errors
             raise StorageError("Cannot reach MongoDB; check MONGODB_URI and that the server is running.") from error
 
-    def save(self, result: SessionEnd) -> bool:
+    def save(self, result: SessionEnd, user_id: str | None = None) -> bool:
         from pymongo.errors import DuplicateKeyError, PyMongoError
         try:
-            self._collection.insert_one(result.to_document())
+            self._collection.insert_one({**result.to_document(), "user_id": user_id})
         except DuplicateKeyError:
             return False
         except PyMongoError as error:
@@ -188,25 +254,44 @@ class MongoResultStore:
     def get(self, session_id: str) -> dict | None:
         from pymongo.errors import PyMongoError
         try:
-            return self._collection.find_one({"session_id": session_id}, {"_id": 0})
+            document = self._collection.find_one({"session_id": session_id}, {"_id": 0})
+            return {"user_id": None, **document} if document is not None else None
         except PyMongoError as error:
             raise StorageError("MongoDB read failed.") from error
 
-    def list_sessions(self, *, game: str | None = None, limit: int = 20) -> list[dict]:
+    @staticmethod
+    def _query(game: str | None, user_id: str | None) -> dict:
+        query = {}
+        if game is not None:
+            query["game"] = game
+        if user_id is not None:
+            query["user_id"] = user_id
+        return query
+
+    def list_sessions(self, *, game: str | None = None, user_id: str | None = None,
+                      limit: int = 20) -> list[dict]:
         from pymongo.errors import PyMongoError
         _check_limit(limit)
         try:
-            cursor = self._collection.find({} if game is None else {"game": game}, {"_id": 0})
-            return list(cursor.sort([("endedAt", -1), ("session_id", -1)]).limit(limit))
+            cursor = self._collection.find(self._query(game, user_id), {"_id": 0})
+            found = cursor.sort([("endedAt", -1), ("session_id", -1)]).limit(limit)
+            return [{"user_id": None, **document} for document in found]
         except PyMongoError as error:
             raise StorageError("MongoDB read failed.") from error
 
-    def count(self, *, game: str | None = None) -> int:
+    def count(self, *, game: str | None = None, user_id: str | None = None) -> int:
         from pymongo.errors import PyMongoError
         try:
-            return self._collection.count_documents({} if game is None else {"game": game})
+            return self._collection.count_documents(self._query(game, user_id))
         except PyMongoError as error:
             raise StorageError("MongoDB read failed.") from error
+
+    def claim_unassigned(self, user_id: str) -> int:
+        from pymongo.errors import PyMongoError
+        try:
+            return self._collection.update_many({"user_id": None}, {"$set": {"user_id": user_id}}).modified_count
+        except PyMongoError as error:
+            raise StorageError("MongoDB write failed.") from error
 
     def close(self) -> None:
         self._client.close()
