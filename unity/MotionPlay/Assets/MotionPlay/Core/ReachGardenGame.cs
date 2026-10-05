@@ -35,8 +35,8 @@ namespace MotionPlay.Games
 
     /// <summary>
     /// Reach Garden rules: hold the cursor on each target to water it. Contains no engine types so
-    /// the same code runs in Unity and in the standalone test harness. It tracks only what the
-    /// current round needs; session statistics are a later phase.
+    /// the same code runs in Unity and in the standalone test harness. Per-round statistics
+    /// live in <see cref="ReachGardenStats"/>.
     /// </summary>
     public sealed class ReachGardenGame
     {
@@ -49,6 +49,7 @@ namespace MotionPlay.Games
         private double halfHeight;
         private double dwell;
         private bool restartArmed;
+        private readonly ReachGardenStats stats = new ReachGardenStats();
 
         public ReachGardenGame(ReachGardenSettings settings, double boundsHalfWidth, double boundsHalfHeight, int seed)
         {
@@ -69,6 +70,8 @@ namespace MotionPlay.Games
         public int TargetsWatered { get; private set; }
         public int TargetsMissed { get; private set; }
         public double TimeRemaining { get; private set; }
+        /// <summary>Statistics for the current round; reset whenever a round starts.</summary>
+        public ReachGardenStats Stats => stats;
         /// <summary>Fraction (0 to 1) of the dwell completed on the active target.</summary>
         public double DwellProgress => Math.Min(1, dwell / settings.DwellSeconds);
 
@@ -113,9 +116,10 @@ namespace MotionPlay.Games
                 return;
             }
 
+            stats.Observe(dt, tracking, cursorX, cursorY, inside);
             if (tracking) TimeRemaining = Math.Max(0, TimeRemaining - dt);
-            if (dwell >= settings.DwellSeconds) { TargetsWatered++; Advance(); }
-            else if (TimeRemaining <= 0) { TargetsMissed++; Advance(); }
+            if (dwell >= settings.DwellSeconds) { TargetsWatered++; Advance(true); }
+            else if (TimeRemaining <= 0) { TargetsMissed++; Advance(false); }
         }
 
         /// <summary>Begin a fresh round immediately, for example from a keyboard shortcut.</summary>
@@ -126,12 +130,14 @@ namespace MotionPlay.Games
             TargetsWatered = 0;
             TargetsMissed = 0;
             TargetIndex = 0;
+            stats.Reset();
             Phase = ReachGardenPhase.Playing;
             PlaceTarget();
         }
 
-        private void Advance()
+        private void Advance(bool watered)
         {
+            stats.EndTarget(watered);
             dwell = 0;
             TargetIndex++;
             if (TargetsWatered + TargetsMissed >= settings.TargetCount)
@@ -161,6 +167,7 @@ namespace MotionPlay.Games
             TargetX = x; TargetY = y;
             dwell = 0;
             TimeRemaining = settings.TargetTimeoutSeconds;
+            stats.BeginTarget();
         }
 
         private bool Inside(double x, double y)

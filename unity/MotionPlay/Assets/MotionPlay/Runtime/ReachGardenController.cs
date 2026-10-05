@@ -171,7 +171,7 @@ namespace MotionPlay.Unity
         private void OnGUI()
         {
             if (game == null) return;
-            GUILayout.BeginArea(new Rect(Screen.width - 316, 16, 300, 110), GUI.skin.box);
+            GUILayout.BeginArea(new Rect(Screen.width - 316, 16, 300, game.Phase == ReachGardenPhase.Complete ? 215 : 110), GUI.skin.box);
             GUILayout.Label("MotionPlay — Reach Garden");
             switch (game.Phase)
             {
@@ -185,11 +185,19 @@ namespace MotionPlay.Unity
                     break;
                 default:
                     GUILayout.Label("Round complete: watered " + game.TargetsWatered + " of " + game.TargetCount + ".");
+                    ReachGardenStats stats = game.Stats;
+                    GUILayout.Label("Accuracy " + Percent(stats.Accuracy) + "  |  Best streak " + stats.BestStreak);
+                    GUILayout.Label("Reaction " + Seconds(stats.AverageReactionTime) + "  Movement " + Seconds(stats.AverageMovementTime));
+                    GUILayout.Label("Hold stability " + Percent(stats.AverageHoldStability) + "  Path efficiency " + Percent(stats.AveragePathEfficiency));
+                    GUILayout.Label("Time " + stats.DurationSeconds.ToString("0.0") + " s");
                     GUILayout.Label("Hold the cursor on the blue circle (or press R) to play again.");
                     break;
             }
             GUILayout.EndArea();
         }
+
+        private static string Percent(double? value) => value.HasValue ? (value.Value * 100).ToString("0") + "%" : "-";
+        private static string Seconds(double? value) => value.HasValue ? value.Value.ToString("0.00") + " s" : "-";
 
         private void OnDestroy()
         {
