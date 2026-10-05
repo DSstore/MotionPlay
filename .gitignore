@@ -49,3 +49,6 @@ Desktop.ini
 
 # Local result store written by backend.result_receiver
 data/
+
+# Generated progress reports
+reports/

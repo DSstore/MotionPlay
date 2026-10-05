@@ -87,6 +87,6 @@ They run with Qt's offscreen mode, so no display is needed. Colors, spacing, and
 the window looks in dark mode or on a high-DPI screen are not covered by tests; use
 the checklist above.
 
-Reports you can save or print come in Phase 14. This is a gameplay prototype for a
+The **Export report...** button, added in [Phase 14](phase14_reports.md), saves a PDF. This is a gameplay prototype for a
 portfolio project, not a medical device or therapy tool, and the numbers have no
 clinical meaning.

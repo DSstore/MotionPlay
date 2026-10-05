@@ -4,9 +4,9 @@ An experimental computer-vision motion gaming platform designed to demonstrate h
 
 **Portfolio/educational project. Not a medical device.** MotionPlay does not provide clinical rehabilitation, diagnosis, or treatment. Future reports will describe gameplay performance metrics, not medical improvement.
 
-## Current status: Phase 13
+## Current status: Phase 14
 
-This is an original implementation. Phase 1 provides the Python package structure, validated `.env` configuration, rotating local logs, an import health check, and foundation tests. Phase 2 adds webcam capture, MediaPipe Hands, reusable hand observations, and a local landmark preview. Phase 3 adds bounded palm-center control coordinates, EMA smoothing, a dead zone, handedness-confidence gating, and tracking-loss timeouts. Phase 4 adds reusable gesture classification and per-hand debouncing for `OPEN_HAND`, `FIST`, `PINCH`, `POINT`, and `UNKNOWN`. Phase 5 adds a paced Python UDP sender, a validated `CV_STATE` JSON protocol, and a local packet monitor. Phase 6 adds a minimal Unity project, a threaded UDP receiver with packet validation, sequence ordering, receive timeout, and a numerical diagnostic panel. Phase 7 adds a hand-controlled geometric cursor with mirror-aware coordinate mapping, camera bounds, and visibility tied to fresh tracking. Phase 8 adds Reach Garden, a first game where you hold the cursor on geometric flowers to water them (see [Phase 8](docs/phase8_reach_garden.md)). Phase 9 adds in-memory round statistics (accuracy, streaks, reaction and movement time, hold stability, path efficiency) shown after each round (see [Phase 9](docs/phase9_session_stats.md)). Phase 10 sends each finished round from Unity to a Python result receiver that validates it, stores it once (local JSONL file, or MongoDB if available), and acknowledges it, with Unity retrying until confirmed (see [Phase 10](docs/phase10_result_delivery.md)). Phase 11 puts storage behind one interface with JSONL, SQLite, and MongoDB stores, plus a command to list and migrate saved rounds (see [Phase 11](docs/phase11_storage.md)); MongoDB is tested only against a stand-in, not a live server. Phase 12 adds local player accounts (bcrypt passwords, login lockout) and tags each saved round with its player (see [Phase 12](docs/phase12_accounts.md)). Phase 13 adds a PyQt6 dashboard: log in to see your rounds, summary cards, a trend chart, and a table that refreshes as you play (see [Phase 13](docs/phase13_dashboard.md)). Saved progress reports, adaptive difficulty, installers, and the later polish phases are **not implemented yet**.
+This is an original implementation. Phase 1 provides the Python package structure, validated `.env` configuration, rotating local logs, an import health check, and foundation tests. Phase 2 adds webcam capture, MediaPipe Hands, reusable hand observations, and a local landmark preview. Phase 3 adds bounded palm-center control coordinates, EMA smoothing, a dead zone, handedness-confidence gating, and tracking-loss timeouts. Phase 4 adds reusable gesture classification and per-hand debouncing for `OPEN_HAND`, `FIST`, `PINCH`, `POINT`, and `UNKNOWN`. Phase 5 adds a paced Python UDP sender, a validated `CV_STATE` JSON protocol, and a local packet monitor. Phase 6 adds a minimal Unity project, a threaded UDP receiver with packet validation, sequence ordering, receive timeout, and a numerical diagnostic panel. Phase 7 adds a hand-controlled geometric cursor with mirror-aware coordinate mapping, camera bounds, and visibility tied to fresh tracking. Phase 8 adds Reach Garden, a first game where you hold the cursor on geometric flowers to water them (see [Phase 8](docs/phase8_reach_garden.md)). Phase 9 adds in-memory round statistics (accuracy, streaks, reaction and movement time, hold stability, path efficiency) shown after each round (see [Phase 9](docs/phase9_session_stats.md)). Phase 10 sends each finished round from Unity to a Python result receiver that validates it, stores it once (local JSONL file, or MongoDB if available), and acknowledges it, with Unity retrying until confirmed (see [Phase 10](docs/phase10_result_delivery.md)). Phase 11 puts storage behind one interface with JSONL, SQLite, and MongoDB stores, plus a command to list and migrate saved rounds (see [Phase 11](docs/phase11_storage.md)); MongoDB is tested only against a stand-in, not a live server. Phase 12 adds local player accounts (bcrypt passwords, login lockout) and tags each saved round with its player (see [Phase 12](docs/phase12_accounts.md)). Phase 13 adds a PyQt6 dashboard: log in to see your rounds, summary cards, a trend chart, and a table that refreshes as you play (see [Phase 13](docs/phase13_dashboard.md)). Phase 14 adds PDF progress reports with a summary, an earlier-versus-later comparison, trend charts, and a round table, from the dashboard's Export report button or `python -m app.report` (see [Phase 14](docs/phase14_reports.md)). Adaptive difficulty, installers, and the later polish phases are **not implemented yet**.
 
 Cloud checks cover the Python pipeline, compiled engine-independent C# receiver/mapping, and real Python-to-C# UDP delivery with cursor-coordinate assertions. Unity Editor, Windows Play Mode, and live webcam verification remain pending.
 
@@ -98,6 +98,16 @@ After creating a player, open your history with:
 
 It logs you in and refreshes every few seconds, so rounds saved by the receiver appear on their own. See the [Phase 13 guide](docs/phase13_dashboard.md).
 
+### Make a progress report (Phase 14)
+
+Click **Export report...** in the dashboard, or from PowerShell:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.report --user steve --days 30
+```
+
+Reports are PDFs saved in `reports/` (ignored by Git). See the [Phase 14 guide](docs/phase14_reports.md).
+
 ### Run Reach Garden (Phase 8)
 
 With the Phase 7 cursor working, click **MotionPlay → Create Reach Garden Scene** in Unity, press **Play**, and start the Python CV engine. Hold the cursor on each flower to water it. Setup and the acceptance checklist are in the [Phase 8 guide](docs/phase8_reach_garden.md).
@@ -111,7 +121,7 @@ Close the Python packet monitor first; Unity needs exclusive ownership of the re
 ## Repository layout
 
 ```text
-app/          Health check, UDP monitor, and the PyQt6 dashboard
+app/          Health check, UDP monitor, PyQt6 dashboard, and PDF progress reports
 cv_engine/    Capture, tracking, palm filtering, gestures, preview, UDP sender
 backend/      Result receiver, storage, accounts, and session tools (difficulty is still reserved)
 shared/       Configuration, logging, and wire protocol
@@ -158,7 +168,7 @@ The harness does not require Unity or a webcam. Unity itself supplies Json.NET t
 11. Database abstraction and MongoDB (**implemented; MongoDB server verification pending**).
 12. User authentication (**implemented**).
 13. PyQt6 dashboard (**implemented; visual check on your display pending**).
-14. Progress reports.
+14. Progress reports (**implemented; PDF viewer check on your machine pending**).
 15. Adaptive difficulty.
 16. Broader automated testing (tests also accompany earlier functionality).
 17. Expanded logging and error handling.

@@ -11,11 +11,12 @@ from datetime import datetime
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtWidgets import (QApplication, QDialog, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel,
-                             QLineEdit, QMainWindow, QPushButton, QSplitter, QStackedWidget, QTableWidget,
-                             QTableWidgetItem, QVBoxLayout, QWidget)
+from PyQt6.QtWidgets import (QApplication, QDialog, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QHeaderView,
+                             QLabel, QLineEdit, QMainWindow, QPushButton, QSplitter, QStackedWidget,
+                             QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 from app import dashboard_model as model
+from app.report import DEFAULT_REPORT_DIR, MAX_ROUNDS, ReportError, build_report, default_filename, write_pdf
 from backend.auth import AuthError, User, UserStore
 from backend.result_receiver import add_store_arguments, store_from_args
 from backend.storage import ResultStore, StorageError
@@ -118,11 +119,13 @@ class DashboardWindow(QMainWindow):
         self.resize(980, 720)
 
         self.refresh_button = QPushButton("Refresh")
+        self.export_button = QPushButton("Export report...")
         self.logout_button = QPushButton("Log out")
         header = QHBoxLayout()
         header.addWidget(QLabel(f"<b>MotionPlay</b> &nbsp; Signed in as <b>{user.username}</b>"))
         header.addStretch(1)
         header.addWidget(self.refresh_button)
+        header.addWidget(self.export_button)
         header.addWidget(self.logout_button)
 
         self.cards: dict[str, QLabel] = {}
@@ -173,12 +176,33 @@ class DashboardWindow(QMainWindow):
         self.setCentralWidget(root)
 
         self.refresh_button.clicked.connect(self.refresh)
+        self.export_button.clicked.connect(self._choose_and_export)
         self.logout_button.clicked.connect(self._log_out)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.refresh)
         if refresh_ms > 0:
             self.timer.start(refresh_ms)
         self.refresh()
+
+    def _choose_and_export(self) -> None:
+        now = datetime.now()
+        DEFAULT_REPORT_DIR.mkdir(parents=True, exist_ok=True)
+        suggestion = str(DEFAULT_REPORT_DIR / default_filename(self._user.username, now))
+        chosen, _filter = QFileDialog.getSaveFileName(self, "Save progress report", suggestion, "PDF files (*.pdf)")
+        if chosen:  # An empty string means the player cancelled.
+            self.export_report(Path(chosen))
+
+    def export_report(self, path: Path) -> bool:
+        """Write this player's progress report as a PDF. Returns whether it worked; the status line says why not."""
+        try:
+            documents = self._store.list_sessions(user_id=self._user.user_id, limit=MAX_ROUNDS)
+            pages = build_report(documents, self._user.username, datetime.now())
+            write_pdf(pages, path)
+        except (ReportError, StorageError) as error:
+            self.status_label.setText(f"Report not saved: {error}")
+            return False
+        self.status_label.setText(f"Report saved ({len(pages)} pages): {path}")
+        return True
 
     def _log_out(self) -> None:
         self.logged_out = True
