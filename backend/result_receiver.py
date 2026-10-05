@@ -8,12 +8,13 @@ import socket
 import sys
 from pathlib import Path
 
-from backend.storage import JsonlResultStore, MongoResultStore, ResultStore, StorageError
+from backend.storage import STORE_KINDS, ResultStore, StorageError, open_store
 from shared.config import PROJECT_ROOT, ConfigurationError, load_settings
 from shared.protocol import (MAX_DATAGRAM_BYTES, ProtocolError, decode_session_end,
                              encode_result_ack, peek_session_id)
 
 LOGGER = logging.getLogger("motionplay.backend.result_receiver")
+DEFAULT_FILES = {"jsonl": Path("data") / "results.jsonl", "sqlite": Path("data") / "motionplay.db"}
 
 
 class ResultReceiver:
@@ -55,12 +56,27 @@ def serve(receiver: ResultReceiver, port: int, *, max_results: int | None = None
     return answered
 
 
+def store_from_args(kind: str, file: Path | None, settings) -> ResultStore:
+    """Open the chosen store; file defaults are relative to the project root."""
+    path = None
+    if kind in DEFAULT_FILES:
+        path = file if file is not None else DEFAULT_FILES[kind]
+        path = path if path.is_absolute() else PROJECT_ROOT / path
+    return open_store(kind, path=path, mongodb_uri=settings.mongodb_uri,
+                      mongodb_database=settings.mongodb_database)
+
+
+def add_store_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--store", choices=STORE_KINDS, default="jsonl",
+                        help="Where results are kept (default: jsonl; sqlite needs no server; mongo uses .env)")
+    parser.add_argument("--file", type=Path,
+                        help="File for jsonl or sqlite, relative to the project root "
+                             "(default: data/results.jsonl or data/motionplay.db)")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="MotionPlay Unity result receiver")
-    parser.add_argument("--store", choices=("jsonl", "mongo"), default="jsonl",
-                        help="Where to save results (default: jsonl, no database needed)")
-    parser.add_argument("--file", type=Path, default=Path("data") / "results.jsonl",
-                        help="JSONL path, relative to the project root (default: data/results.jsonl)")
+    add_store_arguments(parser)
     parser.add_argument("--port", type=int, help="Override UNITY_TO_PYTHON_PORT")
     parser.add_argument("--max-results", type=int, help="Exit after answering this many datagrams")
     parser.add_argument("--timeout", type=float, help="Exit after this many idle seconds")
@@ -72,11 +88,7 @@ def main(argv: list[str] | None = None) -> int:
         port = args.port if args.port is not None else settings.unity_to_python_port
         if not 1024 <= port <= 65535:
             raise ConfigurationError("Result port must be from 1024 to 65535.")
-        if args.store == "mongo":
-            store = MongoResultStore(settings.mongodb_uri, settings.mongodb_database)
-        else:
-            path = args.file if args.file.is_absolute() else PROJECT_ROOT / args.file
-            store = JsonlResultStore(path)
+        store = store_from_args(args.store, args.file, settings)
         serve(ResultReceiver(store), port, max_results=args.max_results, idle_timeout=args.timeout)
     except socket.timeout:
         print("No result arrived before the idle timeout.", file=sys.stderr)

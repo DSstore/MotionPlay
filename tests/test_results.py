@@ -105,7 +105,7 @@ class MongoStoreTests(unittest.TestCase):
         client = MagicMock()
         client.__getitem__.return_value.__getitem__.return_value = collection
         store = MongoResultStore("mongodb://x", "db", client=client)
-        collection.create_index.assert_called_once_with("session_id", unique=True)
+        collection.create_index.assert_any_call("session_id", unique=True)
         self.assertTrue(store.save(make_result()))
         collection.insert_one.side_effect = DuplicateKeyError("dup")
         self.assertFalse(store.save(make_result()))

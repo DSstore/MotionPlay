@@ -36,6 +36,7 @@ Message fields and acknowledgement statuses are in the [UDP protocol](udp_protoc
 | Store | How | Notes |
 |---|---|---|
 | JSONL (default) | `data/results.jsonl`, one JSON object per line | No database needed; `data/` is ignored by Git; dedupes by `session_id`, including after a restart |
+| SQLite | `--store sqlite` writes `data/motionplay.db` | Added in [Phase 11](phase11_storage.md), which also adds reading and listing |
 | MongoDB | `--store mongo` uses `MONGODB_URI` and `MONGODB_DATABASE` from `.env` | Collection `sessions` with a unique index on `session_id` |
 
 MongoDB is not installed on the development machine, so the MongoDB store is covered

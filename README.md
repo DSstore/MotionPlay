@@ -4,9 +4,9 @@ An experimental computer-vision motion gaming platform designed to demonstrate h
 
 **Portfolio/educational project. Not a medical device.** MotionPlay does not provide clinical rehabilitation, diagnosis, or treatment. Future reports will describe gameplay performance metrics, not medical improvement.
 
-## Current status: Phase 10
+## Current status: Phase 11
 
-This is an original implementation. Phase 1 provides the Python package structure, validated `.env` configuration, rotating local logs, an import health check, and foundation tests. Phase 2 adds webcam capture, MediaPipe Hands, reusable hand observations, and a local landmark preview. Phase 3 adds bounded palm-center control coordinates, EMA smoothing, a dead zone, handedness-confidence gating, and tracking-loss timeouts. Phase 4 adds reusable gesture classification and per-hand debouncing for `OPEN_HAND`, `FIST`, `PINCH`, `POINT`, and `UNKNOWN`. Phase 5 adds a paced Python UDP sender, a validated `CV_STATE` JSON protocol, and a local packet monitor. Phase 6 adds a minimal Unity project, a threaded UDP receiver with packet validation, sequence ordering, receive timeout, and a numerical diagnostic panel. Phase 7 adds a hand-controlled geometric cursor with mirror-aware coordinate mapping, camera bounds, and visibility tied to fresh tracking. Phase 8 adds Reach Garden, a first game where you hold the cursor on geometric flowers to water them (see [Phase 8](docs/phase8_reach_garden.md)). Phase 9 adds in-memory round statistics (accuracy, streaks, reaction and movement time, hold stability, path efficiency) shown after each round (see [Phase 9](docs/phase9_session_stats.md)). Phase 10 sends each finished round from Unity to a Python result receiver that validates it, stores it once (local JSONL file, or MongoDB if available), and acknowledges it, with Unity retrying until confirmed (see [Phase 10](docs/phase10_result_delivery.md)). Authentication and the dashboard are **not implemented yet**.
+This is an original implementation. Phase 1 provides the Python package structure, validated `.env` configuration, rotating local logs, an import health check, and foundation tests. Phase 2 adds webcam capture, MediaPipe Hands, reusable hand observations, and a local landmark preview. Phase 3 adds bounded palm-center control coordinates, EMA smoothing, a dead zone, handedness-confidence gating, and tracking-loss timeouts. Phase 4 adds reusable gesture classification and per-hand debouncing for `OPEN_HAND`, `FIST`, `PINCH`, `POINT`, and `UNKNOWN`. Phase 5 adds a paced Python UDP sender, a validated `CV_STATE` JSON protocol, and a local packet monitor. Phase 6 adds a minimal Unity project, a threaded UDP receiver with packet validation, sequence ordering, receive timeout, and a numerical diagnostic panel. Phase 7 adds a hand-controlled geometric cursor with mirror-aware coordinate mapping, camera bounds, and visibility tied to fresh tracking. Phase 8 adds Reach Garden, a first game where you hold the cursor on geometric flowers to water them (see [Phase 8](docs/phase8_reach_garden.md)). Phase 9 adds in-memory round statistics (accuracy, streaks, reaction and movement time, hold stability, path efficiency) shown after each round (see [Phase 9](docs/phase9_session_stats.md)). Phase 10 sends each finished round from Unity to a Python result receiver that validates it, stores it once (local JSONL file, or MongoDB if available), and acknowledges it, with Unity retrying until confirmed (see [Phase 10](docs/phase10_result_delivery.md)). Phase 11 puts storage behind one interface with JSONL, SQLite, and MongoDB stores, plus a command to list and migrate saved rounds (see [Phase 11](docs/phase11_storage.md)); MongoDB is tested only against a stand-in, not a live server. Authentication and the dashboard are **not implemented yet**.
 
 Cloud checks cover the Python pipeline, compiled engine-independent C# receiver/mapping, and real Python-to-C# UDP delivery with cursor-coordinate assertions. Unity Editor, Windows Play Mode, and live webcam verification remain pending.
 
@@ -86,7 +86,7 @@ Start the receiver before or after Reach Garden; Unity retries for about five se
 .\.venv\Scripts\python.exe -m backend.result_receiver
 ```
 
-Results append to `data/results.jsonl` (ignored by Git). Add `--store mongo` to use MongoDB from `.env`. See the [Phase 10 guide](docs/phase10_result_delivery.md).
+Results append to `data/results.jsonl` (ignored by Git). Add `--store sqlite` for a SQLite database or `--store mongo` for MongoDB from `.env`, and list saved rounds with `.\.venv\Scripts\python.exe -m backend.sessions list`. See the [Phase 10](docs/phase10_result_delivery.md) and [Phase 11](docs/phase11_storage.md) guides.
 
 ### Run Reach Garden (Phase 8)
 
@@ -143,9 +143,9 @@ The harness does not require Unity or a webcam. Unity itself supplies Json.NET t
 6. Unity UDP receiver (**implemented; Unity Editor/Windows verification pending**).
 7. Hand-controlled Unity cursor (**implemented; local proof-of-concept validation pending**).
 8. Reach Garden gameplay using geometric placeholders (**implemented; Unity Editor/live play verification pending**).
-9. Session statistics.
-10. Unity results sent to Python.
-11. Database abstraction and MongoDB.
+9. Session statistics (**implemented**).
+10. Unity results sent to Python (**implemented; verified with a live round**).
+11. Database abstraction and MongoDB (**implemented; MongoDB server verification pending**).
 12. User authentication.
 13. PyQt6 dashboard.
 14. Progress reports.
