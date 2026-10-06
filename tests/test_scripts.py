@@ -58,17 +58,23 @@ def setUpModule() -> None:
         (path / ".venv" / "Scripts" / "python.exe").write_bytes(b"")
 
     no_env = temp_folder(fake_venv)
+
+    def fake_project(path: Path) -> None:  # an environment and a .env, so the start script's own checks pass
+        fake_venv(path)
+        (path / ".env").write_text("LOG_LEVEL=INFO\n", encoding="ascii")
+
+    ready = temp_folder(fake_project)  # the start tests must not depend on the developer's own .venv
     before_listing = sorted(p.name for p in Path(with_example).iterdir())
 
     jobs = {
         "parse": parse_check,
-        "dry": lambda: run_script("start.ps1", "-DryRun", "-User", "steve"),
-        "options": lambda: run_script("start.ps1", "-DryRun", "-NoPlayer", "-Preview", "-Dashboard"),
-        "badname-chars": lambda: run_script("start.ps1", "-DryRun", "-User", "bad name; calc"),
-        "badname-short": lambda: run_script("start.ps1", "-DryRun", "-User", "ab"),
-        "badname-subst": lambda: run_script("start.ps1", "-DryRun", "-User", "a$(whoami)b"),
-        "both": lambda: run_script("start.ps1", "-DryRun", "-User", "steve", "-NoPlayer"),
-        "neither": lambda: run_script("start.ps1", "-DryRun"),
+        "dry": lambda: run_script("start.ps1", "-DryRun", "-User", "steve", "-ProjectRoot", ready),
+        "options": lambda: run_script("start.ps1", "-DryRun", "-NoPlayer", "-Preview", "-Dashboard", "-ProjectRoot", ready),
+        "badname-chars": lambda: run_script("start.ps1", "-DryRun", "-User", "bad name; calc", "-ProjectRoot", ready),
+        "badname-short": lambda: run_script("start.ps1", "-DryRun", "-User", "ab", "-ProjectRoot", ready),
+        "badname-subst": lambda: run_script("start.ps1", "-DryRun", "-User", "a$(whoami)b", "-ProjectRoot", ready),
+        "both": lambda: run_script("start.ps1", "-DryRun", "-User", "steve", "-NoPlayer", "-ProjectRoot", ready),
+        "neither": lambda: run_script("start.ps1", "-DryRun", "-ProjectRoot", ready),
         "start-not-set-up": lambda: run_script("start.ps1", "-User", "steve", "-ProjectRoot", empty),
         "start-no-env": lambda: run_script("start.ps1", "-User", "steve", "-ProjectRoot", no_env),
         "setup-empty": lambda: run_script("setup.ps1", "-CheckOnly", "-ProjectRoot", with_example),
