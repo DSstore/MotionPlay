@@ -1,8 +1,8 @@
 # MotionPlay UDP protocol
 
-Phase 5 implements **Python → Unity `CV_STATE`**. The packet monitor is a
-diagnostic tool. Phase 6 implements the Unity receiver; Unity → Python result
-messages below are reserved designs, not working endpoints.
+Two messages are implemented. **Python → Unity `CV_STATE`** (Phase 5; the Unity receiver is
+Phase 6) streams hand state. **Unity → Python `SESSION_END`** with its `RESULT_ACK` reply
+(Phase 10) delivers each finished round. The packet monitor is a diagnostic tool.
 
 ## Transport
 
@@ -119,8 +119,8 @@ whether an action uses a gesture edge or a continuously held state.
 
 Wall-clock timestamps can jump and clocks on different computers can differ.
 Use sequence numbers for ordering, and local monotonic time for receive timeout.
-Timestamps alone do not measure UDP or Unity update latency. Those measurements
-will need clock-aware instrumentation in later phases.
+Timestamps alone do not measure UDP or Unity update latency; measuring them would need
+clock-aware instrumentation that is not implemented.
 
 `shared.protocol.decode_cv_state` rejects oversized packets, invalid UTF-8/JSON,
 duplicate keys, missing fields, unsupported versions/types, invalid enums,

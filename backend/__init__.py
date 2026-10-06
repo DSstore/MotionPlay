@@ -1,1 +1,1 @@
-"""Backend package; persistence and session services come in later phases."""
+"""Backend package: result receiver, storage, accounts, and session tools."""

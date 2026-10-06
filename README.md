@@ -1,189 +1,169 @@
 # MotionPlay
 
-An experimental computer-vision motion gaming platform designed to demonstrate how webcam-based movement tracking can be combined with interactive games, performance analytics, and adaptive difficulty.
+MotionPlay turns a webcam into a game controller. Python tracks your hand with OpenCV and MediaPipe and streams its position to a Unity game, where you hold a
+cursor on geometric flowers to water them. Each finished round is measured, saved, and shown on a desktop dashboard and in PDF progress reports, and the game adapts its difficulty
+to how you are doing.
 
-**Portfolio/educational project. Not a medical device.** MotionPlay does not provide clinical rehabilitation, diagnosis, or treatment. Future reports will describe gameplay performance metrics, not medical improvement.
+It is an experimental portfolio project built to show how webcam-based movement tracking can be combined with interactive games, performance analytics, and adaptive difficulty.
 
-## Current status: Phase 18
+**Portfolio and educational project. Not a medical device.** MotionPlay does not provide clinical rehabilitation, diagnosis, or treatment. Its reports describe gameplay performance
+numbers from a prototype game, not medical improvement, and are not a basis for health conclusions.
 
-This is an original implementation. Phase 1 provides the Python package structure, validated `.env` configuration, rotating local logs, an import health check, and foundation tests. Phase 2 adds webcam capture, MediaPipe Hands, reusable hand observations, and a local landmark preview. Phase 3 adds bounded palm-center control coordinates, EMA smoothing, a dead zone, handedness-confidence gating, and tracking-loss timeouts. Phase 4 adds reusable gesture classification and per-hand debouncing for `OPEN_HAND`, `FIST`, `PINCH`, `POINT`, and `UNKNOWN`. Phase 5 adds a paced Python UDP sender, a validated `CV_STATE` JSON protocol, and a local packet monitor. Phase 6 adds a minimal Unity project, a threaded UDP receiver with packet validation, sequence ordering, receive timeout, and a numerical diagnostic panel. Phase 7 adds a hand-controlled geometric cursor with mirror-aware coordinate mapping, camera bounds, and visibility tied to fresh tracking. Phase 8 adds Reach Garden, a first game where you hold the cursor on geometric flowers to water them (see [Phase 8](docs/phase8_reach_garden.md)). Phase 9 adds in-memory round statistics (accuracy, streaks, reaction and movement time, hold stability, path efficiency) shown after each round (see [Phase 9](docs/phase9_session_stats.md)). Phase 10 sends each finished round from Unity to a Python result receiver that validates it, stores it once (local JSONL file, or MongoDB if available), and acknowledges it, with Unity retrying until confirmed (see [Phase 10](docs/phase10_result_delivery.md)). Phase 11 puts storage behind one interface with JSONL, SQLite, and MongoDB stores, plus a command to list and migrate saved rounds (see [Phase 11](docs/phase11_storage.md)); MongoDB is tested only against a stand-in, not a live server. Phase 12 adds local player accounts (bcrypt passwords, login lockout) and tags each saved round with its player (see [Phase 12](docs/phase12_accounts.md)). Phase 13 adds a PyQt6 dashboard: log in to see your rounds, summary cards, a trend chart, and a table that refreshes as you play (see [Phase 13](docs/phase13_dashboard.md)). Phase 14 adds PDF progress reports with a summary, an earlier-versus-later comparison, trend charts, and a round table, from the dashboard's Export report button or `python -m app.report` (see [Phase 14](docs/phase14_reports.md)). Phase 15 adds adaptive difficulty: five Reach Garden levels that move up or down after two qualifying rounds, remembered between sessions and shown in the dashboard and reports (see [Phase 15](docs/phase15_adaptive_difficulty.md)). Phase 16 broadens the automated tests to 96% Python coverage, including every command-line entry point (see [Phase 16](docs/phase16_testing.md)). Phase 17 expands logging and error handling: every working command logs to the rotating file, uncaught errors are recorded with tracebacks, and startup timing and per-run summaries make problems diagnosable (see [Phase 17](docs/phase17_logging.md)). Phase 18 adds Windows setup, start and test scripts with double-click launchers (see [Phase 18](docs/phase18_setup_scripts.md)); a packaged installer is not part of the project. The later polish phases are **not implemented yet**.
+## What it does
 
-Cloud checks cover the Python pipeline, compiled engine-independent C# receiver/mapping, and real Python-to-C# UDP delivery with cursor-coordinate assertions. Unity Editor, Windows Play Mode, and live webcam verification remain pending.
+- **Hand tracking to a cursor.** Webcam, then MediaPipe Hands, then palm position with smoothing and label-flicker correction, sent about 30 times a second over UDP. Only numbers leave the process; frames never do.
+- **A first game, Reach Garden.** Eight flowers per round; hold the cursor on each to water it. Original geometric placeholders, no copied art or code.
+- **Round statistics.** Accuracy, streaks, reaction and movement time, hold stability, and path efficiency.
+- **Adaptive difficulty.** Five levels that move up or down after two qualifying rounds, with manual override.
+- **Reliable result saving.** Each round is sent to a Python receiver, acknowledged, retried if needed, and stored exactly once (JSONL, SQLite, or MongoDB).
+- **Players and a dashboard.** Local accounts with bcrypt passwords, and a PyQt6 dashboard of your rounds, charts, and a PDF progress report.
+- **Windows setup and start scripts** with double-click launchers, and a large automated test suite that needs no hardware.
 
-The first milestone now has its webcam → Python/OpenCV/MediaPipe → UDP → Unity cursor implementation. Verify it reliably on your Windows computer before building the first game, **Reach Garden**; Unity/live webcam validation is still pending.
-
-## Planned architecture
+## How it fits together
 
 ```mermaid
-flowchart TD
-    Webcam --> OpenCV
-    OpenCV --> MediaPipe[MediaPipe Hands]
-    MediaPipe --> Gestures[Gesture processor and smoothing]
-    Gestures -->|UDP / JSON: CV_STATE| Unity[Unity gameplay]
-    Unity -->|UDP / JSON: game metrics| Backend[Python backend]
-    Backend --> Storage[Storage abstraction]
-    Storage --> MongoDB
-    Storage -. future local alternative .-> SQLite
-    Backend --> Dashboard[PyQt6 dashboard and reports]
+flowchart LR
+    Cam[Webcam] --> CV[Python CV engine<br/>OpenCV + MediaPipe]
+    CV -- "CV_STATE over UDP 5005" --> U[Unity game<br/>Reach Garden]
+    U -- "SESSION_END over UDP 5006" --> R[Result receiver]
+    R -- "RESULT_ACK" --> U
+    R --> S[(Store: JSONL, SQLite<br/>or MongoDB)]
+    S --> D[PyQt6 dashboard<br/>and PDF reports]
 ```
 
-Python will own computer vision, Unity will own gameplay, the backend will own persistent session data, and PyQt6 will provide the desktop interface. These responsibilities remain separate so future games can reuse tracking.
+Python owns computer vision and data, Unity owns gameplay, and they meet only through two small UDP messages. The reasons for each choice, the data flow in detail, and the limits are in the
+[architecture document](docs/architecture.md).
 
 ## Quick start (Windows)
 
-1. Install 64-bit Python 3.11 (python.org, with the py launcher) and Unity 2022.3.62f3.
+1. Install **64-bit Python 3.11** (python.org, with the py launcher) and **Unity 2022.3.62f3**.
 2. Double-click **`MotionPlay-Setup.cmd`**. It builds the Python environment, creates `.env`, and runs the health check (about 4 minutes the first time).
-3. Create a player: `.\.venv\Scripts\python.exe -m backend.users create <name>`
-4. Open `unity\MotionPlay` in Unity, click **MotionPlay > Create Reach Garden Scene** the first time, and press **Play**.
-5. Double-click **`MotionPlay-Start.cmd`** (or run `.\scripts\start.ps1 -User <name>`) to open the receiver and the CV engine, then show your hand.
+3. Create a player (asks for a password twice): `.\.venv\Scripts\python.exe -m backend.users create <name>`
+4. Open `unity\MotionPlay` in Unity. The first time, click **MotionPlay > Create Reach Garden Scene**, then press **Play**.
+5. Double-click **`MotionPlay-Start.cmd`** (or run `.\scripts\start.ps1 -User <name>`). It opens the result receiver and the CV engine; type your password in the receiver window.
+6. Show your hand to the camera. A round starts when your hand first appears.
 
-`MotionPlay-Test.cmd` runs every automated check. Details and options: [Phase 18](docs/phase18_setup_scripts.md). The manual steps follow.
+`MotionPlay-Test.cmd` runs every automated check. Options for all three launchers are in the [Phase 18 guide](docs/phase18_setup_scripts.md).
 
-## Setup and usage
+### Controls
 
-Use **64-bit Python 3.11**. Windows 11 is the primary local target. Run these commands from the project directory in PowerShell:
+| Where | Key or action | Effect |
+|---|---|---|
+| In the game | Move your hand | Moves the cursor |
+| In the game | Hold the cursor on a flower | Waters it |
+| In the game | Hold on the blue circle, or **R** | Starts a new round |
+| In the game | **[** and **]** | Lower or raise the difficulty level (on the waiting and summary screens only) |
+| CV engine window | **Q** or **Esc** (no preview window), or **Ctrl+C** | Stops the engine |
+| Receiver window | **Ctrl+C** | Stops the receiver |
 
-```powershell
-py -3.11 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-Copy-Item .env.example .env
-.\.venv\Scripts\python.exe -m app.health_check
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
-```
+## Using MotionPlay
 
-Explicitly invoking the virtual environment avoids PowerShell activation policy issues. See [setup and troubleshooting](docs/setup.md) for Linux/cloud commands and error guidance.
+**See your history.** `python -m app.dashboard` logs a player in and shows their rounds, charts, and an **Export report** button; it refreshes by itself as rounds arrive ([Phase 13](docs/phase13_dashboard.md)).
+For a report without the window: `.\.venv\Scripts\python.exe -m app.report --user <name> --days 30` writes a PDF to `reports\` ([Phase 14](docs/phase14_reports.md)).
 
-The health check verifies Python 3.11, OpenCV, MediaPipe, PyQt6 widgets, PyMongo, NumPy, python-dotenv, bcrypt, Matplotlib, configuration, and logging. It returns exit code `1` if a check fails. It does not open a webcam or desktop window, start Unity, or contact MongoDB.
+**Work with saved rounds.** `python -m backend.sessions list --user <name>` lists rounds; `import` copies a JSONL file into SQLite; `claim` gives older unassigned rounds to a player. Choose where results are kept
+with `--store jsonl|sqlite|mongo` ([Phase 11](docs/phase11_storage.md), [accounts](docs/phase12_accounts.md)).
 
-Direct dependencies are pinned in `requirements.txt`. OpenCV is supplied by `opencv-contrib-python`, which MediaPipe already requires, avoiding competing `cv2` installations. MediaPipe `0.10.21` is selected for its `mp.solutions.hands` API; newer MediaPipe releases use a different API. Transitive dependencies are resolver-selected, so this is not yet a complete dependency lock.
+**Check the pieces separately.** `python -m cv_engine.controller` alone shows the camera preview with landmarks and gestures; `python -m app.udp_monitor` prints the hand-state packets so you can confirm delivery before Unity
+([Phases 2 to 5](docs/phase2_hand_tracking.md), [UDP protocol](docs/udp_protocol.md)). Close the monitor before starting Unity, which needs the port to itself.
 
-### Run the Phase 5 webcam pipeline
-
-With the environment ready, run from the project root on Windows:
-
-```powershell
-.\.venv\Scripts\python.exe -m cv_engine.controller
-```
-
-Show your hand to the webcam. The preview draws all 21 landmarks, including wrist, fingertips, and MCP joints, and displays the physical left/right hand label, loop FPS, and MediaPipe processing time. A **white circle** marks the unfiltered palm center; a **magenta cross** marks the smoothed control position. Control X/Y remain between zero and one. Missing or rejected observations expose no active control position, and the filter resets after the configured tracking timeout. Press **Q**, **Escape**, or close the window to stop. No footage is recorded or transmitted; filtered numerical hand states are sent over UDP to localhost by default. Set `CAMERA_INDEX=1` in `.env` if your preferred webcam is the second camera.
-
-The preview also shows each hand's **raw candidate**, **confirmed gesture**, and consecutive-frame count. Five consecutive accepted frames confirm a change by default. A missing/low-confidence hand or unusable geometry immediately clears its gesture state. These are configurable geometric heuristics; real webcam recognition still requires local validation.
-
-For an attached camera without a preview window:
+**Run the commands by hand** (the scripts just do this for you):
 
 ```powershell
-.\.venv\Scripts\python.exe -m cv_engine.controller --no-preview --max-frames 300
+.\.venv\Scripts\python.exe -m backend.result_receiver --store sqlite --user <name>   # one window
+.\.venv\Scripts\python.exe -m cv_engine.controller --no-preview                      # another window
 ```
 
-Headless mode still requires a camera; it is not a simulated webcam. See [Phase 2 capture and tracking](docs/phase2_hand_tracking.md), [Phase 3 filtering](docs/phase3_coordinates.md), [Phase 4 gesture rules](docs/phase4_gestures.md), and [Phase 5 UDP acceptance checks](docs/phase5_udp_sender.md).
+## Requirements
 
-### Verify UDP delivery before Unity
-
-Start this in a separate PowerShell terminal before the CV engine:
-
-```powershell
-.\.venv\Scripts\python.exe -m app.udp_monitor --timeout 120
-```
-
-The monitor prints received `CV_STATE` packets on localhost port 5005. `CONTROL_HAND=right` selects the physical hand; set `left` in `.env` if needed. Packets contain filtered position and confirmed gesture, or an explicit lost state with null position. The sender targets 30 Hz, skips excess frames, and never queues stale states. OS-accepted sends do not prove delivery. Use `--no-udp` on the CV engine for local-only preview. See [UDP protocol](docs/udp_protocol.md) and the [Windows test guide](docs/phase5_udp_sender.md).
-
-### Save results (Phase 10)
-
-Start the receiver before or after Reach Garden; Unity retries for about five seconds after a round ends:
-
-```powershell
-.\.venv\Scripts\python.exe -m backend.result_receiver
-```
-
-Results append to `data/results.jsonl` (ignored by Git). Add `--store sqlite` for a SQLite database or `--store mongo` for MongoDB from `.env`, and create a player with `.\.venv\Scripts\python.exe -m backend.users create NAME`, save rounds for them with `--user NAME`, and list them with `.\.venv\Scripts\python.exe -m backend.sessions list --user NAME`. See the [Phase 10](docs/phase10_result_delivery.md) and [Phase 11](docs/phase11_storage.md), and [Phase 12](docs/phase12_accounts.md) guides.
-
-### Open the dashboard (Phase 13)
-
-After creating a player, open your history with:
-
-```powershell
-.\.venv\Scripts\python.exe -m app.dashboard
-```
-
-It logs you in and refreshes every few seconds, so rounds saved by the receiver appear on their own. See the [Phase 13 guide](docs/phase13_dashboard.md).
-
-### Make a progress report (Phase 14)
-
-Click **Export report...** in the dashboard, or from PowerShell:
-
-```powershell
-.\.venv\Scripts\python.exe -m app.report --user steve --days 30
-```
-
-Reports are PDFs saved in `reports/` (ignored by Git). See the [Phase 14 guide](docs/phase14_reports.md).
-
-### Run Reach Garden (Phase 8)
-
-With the Phase 7 cursor working, click **MotionPlay → Create Reach Garden Scene** in Unity, press **Play**, and start the Python CV engine. Hold the cursor on each flower to water it. Setup and the acceptance checklist are in the [Phase 8 guide](docs/phase8_reach_garden.md).
-
-### Run the Phase 7 hand cursor
-
-In Unity Hub, add the repository's **`unity/MotionPlay`** folder and open it with **Unity 2022.3.62f3**. After packages restore and scripts compile, click **MotionPlay → Create Hand Cursor Test Scene**, then **Play**. Start the Python CV engine in PowerShell. A simple disc follows the filtered palm position, stays inside the orthographic view, and hides on hand loss or receive timeout. Mirroring uses the packet flag to avoid applying the flip twice. Expand diagnostics to inspect received states.
-
-Close the Python packet monitor first; Unity needs exclusive ownership of the receive port. See the [Phase 7 setup and proof-of-concept checklist](docs/phase7_hand_cursor.md). The [Phase 6 receiver scene](docs/phase6_unity_receiver.md) remains available via **MotionPlay → Create Receiver Test Scene** for independent receiver checks.
+- Windows 11 is the primary target. Python 3.11 (64-bit); MediaPipe 0.10.21 is pinned for its `mp.solutions.hands` API, and later releases use a different one.
+- Unity 2022.3.62f3 for the game. Unity supplies Json.NET and NUnit itself.
+- A webcam. No MongoDB server is needed; SQLite and JSONL need nothing extra.
+- Direct dependencies are pinned in `requirements.txt` (transitive ones are resolver-chosen, so it is not a full lock). OpenCV comes from `opencv-contrib-python`, which MediaPipe already requires.
+- Linux and cloud setup commands, and troubleshooting, are in [setup](docs/setup.md). The scripts and the camera backend are Windows-specific.
 
 ## Repository layout
 
 ```text
-app/          Health check, UDP monitor, PyQt6 dashboard, and PDF progress reports
-cv_engine/    Capture, tracking, palm filtering, gestures, preview, UDP sender
-backend/      Result receiver, storage, accounts, and session tools (the difficulty label is stored with each round)
-shared/       Configuration, logging, and wire protocol
-unity/        Unity receiver, hand cursor, diagnostic scenes, core and Play Mode tests
-tests/        Hardware-independent unit and loopback integration tests
-docs/         Setup notes; architecture and protocol docs added with implementation
+app/          Health check, UDP monitor, PyQt6 dashboard, PDF progress reports
+backend/      Result receiver, storage (JSONL/SQLite/MongoDB), accounts, session tools
+cv_engine/    Camera, MediaPipe, label continuity, palm filtering, gestures, preview, UDP sender
+shared/       Configuration, logging, and the wire protocol
+unity/        The Unity project: receiver, hand cursor, Reach Garden, and its Editor and tests
+scripts/      Windows setup, start, and test scripts (with MotionPlay-*.cmd launchers in the root)
+tests/        Hardware-free unit, integration, and loopback tests, plus the C# test harness
+docs/         Architecture, configuration, protocol, and one guide per phase
 ```
 
 ## Configuration and logging
 
-Copy `.env.example` to `.env` for local overrides. Settings load in this order: defaults, project `.env`, process environment. The loader does not mutate process variables. Relative log paths resolve from the project root. Invalid log levels, empty settings, malformed/out-of-range ports, equal send/receive ports, and unsupported MongoDB URI schemes produce helpful errors.
+Copy `.env.example` to `.env` (setup does this). Settings load in order: defaults, `.env`, then environment variables; invalid values are rejected with the setting's name before any camera or socket is opened.
+Every setting, its default, and its valid range is in the [configuration reference](docs/configuration.md). `.env`, virtual environments, logs, and local databases are ignored by Git; put credentials only in `.env`.
 
-UDP uses the literal IPv4 destination `UDP_HOST=127.0.0.1`. Port `5005` receives CV states; port `5006` is reserved for future Unity results. `UDP_SEND_FPS=30` sets the target cadence and `CONTROL_HAND=right` selects the hand. Invalid sender settings are rejected before device access. Unity independently loads the selected port settings and `UNITY_RECEIVE_TIMEOUT=0.5` from the repository `.env` in the Editor, with process-environment overrides. MongoDB defaults to a local instance; Phase 1 checks the URI scheme only, not database availability or credentials. Put credentials in `.env`, never in source code. `.env`, environments, logs, recordings, and local database files are ignored by Git.
-
-Runtime logs go to `logs/motionplay.log`, with a 2 MiB limit per file and three rotated backups. Configure the `motionplay` logger once at an application entry point; components can use child loggers such as `motionplay.cv_engine`. Do not log credentials or webcam frames.
+Every working command writes to `logs/motionplay.log` (2 MiB per file, three backups). Uncaught errors are recorded with a traceback, and each run logs its start-up timings and a summary, including how long the camera took to open
+([Phase 17](docs/phase17_logging.md)).
 
 ## Privacy
 
-Webcam frames stay local. The CV pipeline holds frames in memory for processing and optional preview, with no recording or image transmission. UDP contains numerical hand states only and defaults to localhost. Setting a remote `UDP_HOST` sends those states to that host; `--no-udp` disables transmission. Logs contain startup events, tracking transitions, confirmed gesture names, timing summaries, UDP counters, and errors rather than images or landmarks. Future persistent gameplay data will contain numerical session metrics. Installing dependencies requires network access; the selected hand models are bundled with MediaPipe.
+Webcam frames stay in memory for processing and the optional preview; nothing is recorded or sent as an image. UDP carries numerical hand states only and defaults to localhost; a remote `UDP_HOST` sends those numbers to that host, and
+`--no-udp` turns sending off. Logs hold timings, transitions, gesture names, counters and errors, not images or landmarks, and never passwords or connection strings. Saved rounds are numerical statistics stored on this machine, along with
+bcrypt password hashes for player accounts. Installing dependencies needs network access; MediaPipe's hand models are bundled with it.
 
-## Receiver testing
-
-Python tests run as before. The optional .NET 8 developer harness compiles the same networking core and NUnit tests used by Unity:
+## Testing
 
 ```powershell
+.\MotionPlay-Test.cmd            # everything below, with a summary
+.\.venv\Scripts\python.exe -m unittest discover -s tests
 dotnet run --project tests/csharp/MotionPlay.ReceiverHarness.csproj -- --noresult
 .\.venv\Scripts\python.exe -m tests.check_python_unity_udp
 ```
 
-The harness does not require Unity or a webcam. Unity itself supplies Json.NET through its official package and NUnit through Test Framework; .NET 8 is not required to run MotionPlay in Unity. The standalone suite has 106 C# cases, including 21 cursor mapping cases, 15 Reach Garden rule cases, 9 session statistics cases, and 10 result delivery cases. See the [Phase 7 guide](docs/phase7_hand_cursor.md) for Unity EditMode/PlayMode instructions and the local checks needed before gameplay.
+At the time of writing: **343 Python tests** (96% line and branch coverage), **118 C# tests** that compile the same source files Unity runs, and a real Python-to-C# UDP check. None needs a webcam, Unity, or a database server.
+What cannot be automated (the Unity Editor and Play Mode, the live webcam, a real MongoDB server, real-display rendering) has a manual checklist in each phase guide. See [Phase 16](docs/phase16_testing.md).
 
-## Development sequence
+## Project status
 
-1. Repository and Python environment (**complete**).
-2. Webcam and MediaPipe hand tracking (**implemented; local webcam verification pending**).
-3. Coordinate normalization and smoothing (**implemented; local webcam verification pending**).
-4. Gesture engine (**implemented; local webcam verification pending**).
-5. Python UDP sender (**implemented; live Windows webcam delivery pending**).
-6. Unity UDP receiver (**implemented; Unity Editor/Windows verification pending**).
-7. Hand-controlled Unity cursor (**implemented; local proof-of-concept validation pending**).
-8. Reach Garden gameplay using geometric placeholders (**implemented; Unity Editor/live play verification pending**).
-9. Session statistics (**implemented**).
-10. Unity results sent to Python (**implemented; verified with a live round**).
-11. Database abstraction and MongoDB (**implemented; MongoDB server verification pending**).
-12. User authentication (**implemented**).
-13. PyQt6 dashboard (**implemented; visual check on your display pending**).
-14. Progress reports (**implemented; PDF viewer check on your machine pending**).
-15. Adaptive difficulty (**implemented; Unity Play Mode check pending**).
-16. Broader automated testing (**implemented**: 285 Python tests, 96% coverage; see [Phase 16](docs/phase16_testing.md)).
-17. Expanded logging and error handling (**implemented**; see [Phase 17](docs/phase17_logging.md)).
-18. Installer and startup scripts (**implemented**; see [Phase 18](docs/phase18_setup_scripts.md)).
-19. Complete README and architecture documentation.
-20. Portfolio polish.
+Developed and tested on one Windows 11 PC with one webcam. "Live" means exercised on that hardware with real play, as opposed to automated tests alone.
 
-Demo footage, screenshots, database schemas, performance measurements, challenges, and lessons learned will be added when the corresponding functionality exists. Reach Garden and future games will use original code, mechanics, and assets; no source, artwork, or UI is copied from other projects.
+| # | Phase | Guide | Verification |
+|---|---|---|---|
+| 1 | Repository, environment, configuration, logging | [setup](docs/setup.md) | Complete |
+| 2 | Webcam capture and MediaPipe hand tracking | [guide](docs/phase2_hand_tracking.md) | Live |
+| 3 | Palm coordinates and smoothing | [guide](docs/phase3_coordinates.md) | Live |
+| 4 | Gesture rules and debouncing | [guide](docs/phase4_gestures.md) | Live; geometric heuristics, accuracy not benchmarked |
+| 5 | Python UDP sender | [guide](docs/phase5_udp_sender.md) | Live |
+| 6 | Unity UDP receiver | [guide](docs/phase6_unity_receiver.md) | Live |
+| 7 | Hand-controlled Unity cursor | [guide](docs/phase7_hand_cursor.md) | Live |
+| 8 | Reach Garden gameplay | [guide](docs/phase8_reach_garden.md) | Live |
+| 9 | Round statistics | [guide](docs/phase9_session_stats.md) | Live |
+| 10 | Result delivery from Unity to Python | [guide](docs/phase10_result_delivery.md) | Live |
+| 11 | Storage (JSONL, SQLite, MongoDB) | [guide](docs/phase11_storage.md) | JSONL and SQLite live; MongoDB only against a stand-in |
+| 12 | Player accounts | [guide](docs/phase12_accounts.md) | Login live; lockout and the rest automated |
+| 13 | PyQt6 dashboard | [guide](docs/phase13_dashboard.md) | Automated and data path checked; visual check on a real display pending |
+| 14 | PDF progress reports | [guide](docs/phase14_reports.md) | Automated; PDF not yet checked by eye in a viewer |
+| 15 | Adaptive difficulty | [guide](docs/phase15_adaptive_difficulty.md) | Level up and manual keys live; the automatic level drop is not yet confirmed live |
+| 16 | Broader automated testing | [guide](docs/phase16_testing.md) | Complete |
+| 17 | Expanded logging and error handling | [guide](docs/phase17_logging.md) | Complete; observed in live runs |
+| 18 | Windows setup, start and test scripts | [guide](docs/phase18_setup_scripts.md) | From-scratch install and real launch checked |
+| 19 | Complete README and architecture documentation | [architecture](docs/architecture.md) | This phase |
+| 20 | Portfolio polish | | Not started: demo footage, screenshots, and performance write-up are still to come |
+
+Beyond the phases, two problems found in live play were fixed along the way: tracking flicker from MediaPipe's left/right label flipping ([continuity fix](docs/phase3_coordinates.md)) and a camera that took 6 to 29 seconds
+to open ([DirectShow backend](docs/phase2_hand_tracking.md)).
+
+### Known limitations
+
+One tested machine and webcam; brief tracking flicker remains; one game, and gestures are detected but unused by it; the camera ends the engine on a failed read; difficulty is stored per machine, not per player; no continuous-integration
+workflow; Windows-only scripts. The full list, with reasons, is in the [architecture document](docs/architecture.md#13-known-limitations).
+
+## Documentation
+
+| Read this | For |
+|---|---|
+| [Architecture](docs/architecture.md) | How the system fits together, why, and its limits |
+| [Configuration reference](docs/configuration.md) | Every `.env` setting |
+| [UDP protocol](docs/udp_protocol.md) | The exact `CV_STATE`, `SESSION_END`, and `RESULT_ACK` packets |
+| [Setup and troubleshooting](docs/setup.md) | Manual setup, Linux and cloud notes, common failures |
+| Phase guides (2 to 18) | How each part works and a checklist to verify it |
+
+Reach Garden and any future games use original code, mechanics, and assets; no source, artwork, or UI is copied from other projects.

@@ -43,3 +43,9 @@ Coverage needs a dev tool. If pip fails with `CERTIFICATE_VERIFY_FAILED` (antivi
 - **Not automated at all:** the Unity controller scenes and HUD (they need the Unity Editor), the live webcam, a real MongoDB
   server, and real-display rendering. These stay on the manual checklists in each phase document.
 - **No continuous integration yet.** Tests run locally. A GitHub Actions workflow is a sensible next step.
+
+## Documentation checks (added in Phase 19)
+
+`tests/test_docs.py` (7 tests) keeps the documents honest: every relative link and heading anchor in the README and `docs/` must resolve, every Mermaid block must be
+a recognisable diagram, every phase guide must be linked from the README, and `docs/configuration.md` must list exactly the settings in `.env.example` with the defaults the
+code actually uses (and document every key the loader reads). Mermaid syntax itself is validated with the Mermaid parser when a diagram changes, not in the test run.

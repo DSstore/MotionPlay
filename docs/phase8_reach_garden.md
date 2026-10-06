@@ -38,7 +38,7 @@ and are re-clamped if the Game view is resized. Flower positions are random per
 play (seeded from the clock); tests use fixed seeds.
 
 This phase keeps only the counts the current round needs (watered, missed). Session
-statistics, reaction times, and saving results come in later phases. Gesture
+statistics and reaction times were added in Phase 9, and saving results in Phase 10. Gesture
 recognition does not affect gameplay yet; position and dwell only.
 
 ## Run it on Windows 11

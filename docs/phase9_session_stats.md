@@ -33,7 +33,7 @@ accuracy, and the streak.
 
 These are gameplay measurements for a portfolio project, not a medical device, and
 carry no clinical meaning. `startedAt`, `endedAt`, `hand`, and `difficulty` from the
-reserved protocol fields need a clock and settings plumbing and arrive with Phase 10.
+reserved protocol fields need a clock and settings plumbing and were added in Phase 10.
 
 ## Check it in Unity
 

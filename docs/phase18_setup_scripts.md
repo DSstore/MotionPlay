@@ -69,7 +69,7 @@ skipped, and the summary says so, if the .NET SDK is not installed.
 - A second setup run changed nothing (an edited `.env` was untouched). A bad `-CertFile` failed clearly with exit code 1.
 - A real **launch**: both windows opened from a folder whose name contains a space, and both programs started (camera opened via
   DirectShow in under 3 s, receiver listening).
-- `MotionPlay-Test.cmd -Coverage` run the way a double-click would: every Python test (the suite is now 336), the 118 C# tests and the UDP check all passed, with 96% Python coverage.
+- `MotionPlay-Test.cmd -Coverage` run the way a double-click would: every Python test (336 tests at that point), the 118 C# tests and the UDP check all passed, with 96% Python coverage.
 - `tests\test_scripts.py` (13 tests, Windows only, about 30 seconds) keeps the scripts working: every script parses, the files are
   plain ASCII, unsafe player names are refused, `-CheckOnly` changes nothing, `-DryRun` starts nothing, and the launchers pass their
   options on. It already caught a launcher with a stray tab character in its path.
