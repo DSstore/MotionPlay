@@ -29,6 +29,7 @@ def run_tracking(
     from cv_engine.camera import Camera
     from cv_engine.continuity import LabelContinuity
     from cv_engine.hand_tracker import HandTracker
+    from cv_engine.keys import stop_requested
     from cv_engine.gesture_processor import GestureProcessor
     from cv_engine.position_processor import PositionProcessor
     from cv_engine.preview import Preview
@@ -49,6 +50,8 @@ def run_tracking(
         gesture_processor = GestureProcessor(settings.gestures, settings.control)
         LOGGER.info("Tracking started. Frames stay local; UDP numerical states %s.",
                     "enabled" if sender is not None else "disabled")
+        if preview is None:
+            LOGGER.info("No preview window: press Q or Esc in this console (or Ctrl+C) to stop.")
         started_at = last_report_at = perf_counter()
         previous_tracking = False
         frame_count = 0
@@ -76,6 +79,9 @@ def run_tracking(
                                 sender.sent, sender.failed, sender.skipped)
                 last_report_at = now
             if preview is not None and not preview.show(frame, result, loop_fps, controls, gestures):
+                break
+            if preview is None and stop_requested():
+                LOGGER.info("Stop key pressed.")
                 break
         LOGGER.info("Tracking finished after %d frame(s).", frame_count)
         return frame_count
