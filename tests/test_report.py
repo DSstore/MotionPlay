@@ -102,6 +102,14 @@ class BuildTests(unittest.TestCase):
         self.assertEqual(4, len(pages[1].axes))
         self.assertIn("page 3 of 3", page_text(pages[2]))
 
+    def test_mixed_difficulty_levels_get_a_caveat(self) -> None:
+        mixed = [document(i, difficulty="level_2" if i < 5 else "level_4") for i in range(10)]
+        self.assertIn("different difficulty levels", page_text(report.build_report(mixed, "steve", NOW)[0]))
+        same = [document(i, difficulty="level_4") for i in range(10)]
+        self.assertNotIn("different difficulty levels", page_text(report.build_report(same, "steve", NOW)[0]))
+        legacy = rounds(10)  # all "default"
+        self.assertNotIn("different difficulty levels", page_text(report.build_report(legacy, "steve", NOW)[0]))
+
     def test_few_rounds_say_there_is_not_enough_to_compare(self) -> None:
         text = page_text(report.build_report(rounds(2), "steve", NOW)[0])
         self.assertIn("Not enough rounds to compare yet", text)

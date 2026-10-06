@@ -43,7 +43,7 @@ namespace MotionPlay.Games
         /// <summary>Largest time step accepted, so a frame hitch cannot complete a target.</summary>
         public const double MaxStepSeconds = 0.1;
 
-        private readonly ReachGardenSettings settings;
+        private ReachGardenSettings settings;
         private readonly Random random;
         private double halfWidth;
         private double halfHeight;
@@ -120,6 +120,18 @@ namespace MotionPlay.Games
             if (tracking) TimeRemaining = Math.Max(0, TimeRemaining - dt);
             if (dwell >= settings.DwellSeconds) { TargetsWatered++; Advance(true); }
             else if (TimeRemaining <= 0) { TargetsMissed++; Advance(false); }
+        }
+
+        /// <summary>Swap in new rules, for example a different difficulty. Refused mid-round so a target never changes size under the cursor.</summary>
+        /// <returns>True if applied; false while a round is in progress.</returns>
+        public bool ApplySettings(ReachGardenSettings newSettings)
+        {
+            if (newSettings == null) throw new ArgumentNullException(nameof(newSettings));
+            newSettings.Validate();
+            if (Phase == ReachGardenPhase.Playing) return false;
+            settings = newSettings;
+            dwell = 0;
+            return true;
         }
 
         /// <summary>Begin a fresh round immediately, for example from a keyboard shortcut.</summary>

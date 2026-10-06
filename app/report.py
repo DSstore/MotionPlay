@@ -144,6 +144,11 @@ def _summary_page(documents: list[dict], username: str, generated_at: datetime, 
                ["Measure", "Earlier", "Later", "Change", "Result"], [0.24, 0.17, 0.17, 0.2, 0.22])
         figure.text(0.08, 0.275, "With few rounds, a difference can come from luck, tiredness, or lighting "
                     "as easily as from practice.", fontsize=9, va="top", style="italic")
+    if model.mixed_levels(documents):
+        figure.text(0.08, 0.235, "\n".join(textwrap.wrap(
+            "These rounds were played at different difficulty levels (see the Level column), so earlier and later "
+            "rounds are not like for like: a higher level is harder, which can lower accuracy even when play improves.",
+            105)), fontsize=9, va="top", style="italic")
     return figure
 
 
@@ -187,7 +192,7 @@ def _table_pages(documents: list[dict]) -> list[Figure]:
         figure.text(0.08, 0.95, "Rounds, newest first", fontsize=16, weight="bold", va="top")
         figure.text(0.08, 0.92, f"Rounds {start + 1} to {start + len(chunk)} of {len(newest_first)}", fontsize=9, va="top")
         _table(figure.add_axes([0.04, 0.05, 0.92, 0.85]), [model.table_row(d) for d in chunk], model.TABLE_HEADERS,
-               [0.2, 0.08, 0.1, 0.1, 0.1, 0.1, 0.1, 0.11, 0.11])
+               [0.18, 0.07, 0.06, 0.09, 0.09, 0.1, 0.1, 0.1, 0.11, 0.1])
         pages.append(figure)
     return pages
 

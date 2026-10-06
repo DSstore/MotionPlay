@@ -55,7 +55,7 @@ class ModelTests(unittest.TestCase):
         summary = model.summarize([empty, played])
         self.assertAlmostEqual(0.5, summary.average_reaction)
         self.assertAlmostEqual(0.8, summary.average_stability)
-        self.assertEqual(["-"] * 4, model.table_row(empty)[3:7])
+        self.assertEqual(["-"] * 4, model.table_row(empty)[4:8])
 
     def test_trend_is_oldest_first_and_keeps_gaps(self) -> None:
         late = document(endedAt=1770000300000, accuracy=0.9, averageReactionTime=0.3)
@@ -75,7 +75,30 @@ class ModelTests(unittest.TestCase):
         self.assertEqual("-", model.when(None))
         row = model.table_row(document())
         self.assertEqual(len(model.TABLE_HEADERS), len(row))
-        self.assertEqual("6/8", row[2])
+        self.assertEqual("6/8", row[3])
+
+
+class LevelTests(unittest.TestCase):
+    def test_level_labels(self) -> None:
+        self.assertEqual(4, model.level_of({"difficulty": "level_4"}))
+        self.assertEqual(3, model.level_of({"difficulty": "default"}))  # saved before adaptive difficulty
+        for bad in ("level_0", "level_6", "level_", "level_-1", "Level_3", "level_3x", "hard", "", None, 3):
+            self.assertIsNone(model.level_of({"difficulty": bad}), bad)
+        self.assertIsNone(model.level_of({}))
+        self.assertEqual("-", model.level_text({"difficulty": "hard"}))
+
+    def test_table_shows_the_level(self) -> None:
+        row = model.table_row(document(difficulty="level_5"))
+        self.assertEqual("Level", model.TABLE_HEADERS[2])
+        self.assertEqual("5", row[2])
+
+    def test_mixed_levels(self) -> None:
+        docs = [document(difficulty="level_2"), document(difficulty="level_2")]
+        self.assertFalse(model.mixed_levels(docs))
+        self.assertTrue(model.mixed_levels(docs + [document(difficulty="level_3")]))
+        self.assertFalse(model.mixed_levels(docs + [document(difficulty="mystery")]))
+        self.assertTrue(model.mixed_levels(docs + [document()]))  # "default" counts as level 3
+        self.assertFalse(model.mixed_levels([]))
 
 
 class WindowTestCase(unittest.TestCase):
@@ -186,7 +209,7 @@ class DashboardWindowTests(WindowTestCase):
         window = self.window(self.alice)
         self.assertEqual(0, window.pages.currentIndex())
         self.assertEqual(1, window.table.rowCount())
-        self.assertEqual("8/8", window.table.item(0, 2).text())
+        self.assertEqual("8/8", window.table.item(0, 3).text())
         self.assertEqual("1", window.cards["Rounds"].text())
         self.assertEqual("100%", window.cards["Accuracy"].text())
         self.assertEqual("8", window.cards["Best streak"].text())
@@ -206,9 +229,9 @@ class DashboardWindowTests(WindowTestCase):
         self.store.save(new, self.alice.user_id)
         window = self.window(self.alice)
         self.assertEqual(2, window.table.rowCount())
-        self.assertEqual("6/8", window.table.item(0, 2).text())
-        self.assertEqual("0/8", window.table.item(1, 2).text())
-        self.assertEqual(["-", "-", "-", "-"], [window.table.item(1, c).text() for c in range(3, 7)])
+        self.assertEqual("6/8", window.table.item(0, 3).text())
+        self.assertEqual("0/8", window.table.item(1, 3).text())
+        self.assertEqual(["-", "-", "-", "-"], [window.table.item(1, c).text() for c in range(4, 8)])
         self.assertEqual(2, len(window.figure.axes))
 
     def test_refresh_picks_up_a_new_round(self) -> None:

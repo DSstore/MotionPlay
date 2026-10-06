@@ -15,9 +15,8 @@ namespace MotionPlay.Unity
     {
         [SerializeField] private HandCursorController cursor;
         [SerializeField] private Camera gameplayCamera;
-        [SerializeField, Min(0.1f)] private float targetRadius = 0.5f;
-        [SerializeField, Min(0.1f)] private float dwellSeconds = 0.8f;
-        [SerializeField, Min(1f)] private float targetTimeoutSeconds = 8f;
+        [Tooltip("Move the difficulty level up or down after finished rounds. Target size, dwell time and time limit come from the level.")]
+        [SerializeField] private bool adaptive = true;
         [SerializeField, Min(1)] private int targetCount = 8;
         [SerializeField, Min(0)] private float edgeMargin = 0.15f;
         [SerializeField, Min(0.001f)] private float planeDistance = 10f;
@@ -27,7 +26,11 @@ namespace MotionPlay.Unity
         private static readonly Color Bloomed = new Color(0.45f, 0.95f, 0.5f, 1f);
         private static readonly Color RestartRing = new Color(0.35f, 0.5f, 0.75f, 0.85f);
 
+        private const string LevelPrefsKey = "MotionPlay.ReachGarden.Level";
+
         private ReachGardenGame game;
+        private ReachGardenDifficulty difficulty;
+        private string levelNotice;
         private Texture2D texture;
         private Sprite sprite;
         private SpriteRenderer baseRenderer;
@@ -54,14 +57,9 @@ namespace MotionPlay.Unity
             if (sender == null) sender = gameObject.AddComponent<ResultSender>();
             try
             {
-                var settings = new ReachGardenSettings
-                {
-                    TargetCount = targetCount,
-                    TargetRadius = targetRadius,
-                    DwellSeconds = dwellSeconds,
-                    TargetTimeoutSeconds = targetTimeoutSeconds
-                };
-                game = new ReachGardenGame(settings, 1, 1, Environment.TickCount);
+                difficulty = new ReachGardenDifficulty(LoadLevel());
+                game = new ReachGardenGame(ReachGardenDifficulty.SettingsFor(difficulty.Level, targetCount), 1, 1,
+                    Environment.TickCount);
             }
             catch (ArgumentException issue)
             {
@@ -75,6 +73,9 @@ namespace MotionPlay.Unity
             if (game == null) return;
             if (!TryBounds(out double halfWidth, out double halfHeight)) { SetTargetVisible(false); return; }
             game.SetBounds(halfWidth, halfHeight);
+
+            if (Input.GetKeyDown(KeyCode.LeftBracket)) ChooseLevel(difficulty.Level - 1);
+            if (Input.GetKeyDown(KeyCode.RightBracket)) ChooseLevel(difficulty.Level + 1);
 
             bool restartPressed = Input.GetKeyDown(KeyCode.R);
             if (restartPressed) game.Restart();
@@ -110,11 +111,39 @@ namespace MotionPlay.Unity
                 if (sessionHand == null)
                     Debug.LogWarning("MotionPlay: round finished without a known hand; result not sent.", this);
                 else
-                    sender.Submit(SessionResult.FromStats(game.Stats, "reach_garden", sessionHand, "default",
+                    // The label is the level this round was played at; adapt only after it is captured.
+                    sender.Submit(SessionResult.FromStats(game.Stats, "reach_garden", sessionHand, difficulty.Label,
                         sessionId, sessionStartedAt, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+                if (adaptive) AdaptAfterRound();
             }
             lastPhase = phase;
         }
+
+        private void AdaptAfterRound()
+        {
+            DifficultyChange change = difficulty.RecordRound(game.Stats);
+            if (change == DifficultyChange.None) { levelNotice = null; return; }
+            ApplyLevel();
+            levelNotice = change == DifficultyChange.Harder ? "Level up: next round is harder." : "Level down: next round is easier.";
+        }
+
+        /// <summary>Manual override with [ and ]; ignored mid-round so a flower never changes size under the cursor.</summary>
+        private void ChooseLevel(int level)
+        {
+            if (game.Phase == ReachGardenPhase.Playing) return;
+            difficulty.SetLevel(level);
+            ApplyLevel();
+            levelNotice = "Level set manually.";
+        }
+
+        private void ApplyLevel()
+        {
+            game.ApplySettings(ReachGardenDifficulty.SettingsFor(difficulty.Level, targetCount));
+            try { PlayerPrefs.SetInt(LevelPrefsKey, difficulty.Level); PlayerPrefs.Save(); }
+            catch (Exception issue) { Debug.LogWarning("MotionPlay: could not save difficulty level: " + issue.Message, this); }
+        }
+
+        private static int LoadLevel() => PlayerPrefs.GetInt(LevelPrefsKey, ReachGardenDifficulty.DefaultLevel);
 
         private bool TryBounds(out double halfWidth, out double halfHeight)
         {
@@ -126,7 +155,7 @@ namespace MotionPlay.Unity
                 error = "Reach Garden requires an enabled orthographic camera.";
             else
             {
-                double inset = targetRadius + edgeMargin;
+                double inset = game.TargetRadius + edgeMargin;
                 halfHeight = gameplayCamera.orthographicSize - inset;
                 halfWidth = gameplayCamera.orthographicSize * gameplayCamera.aspect - inset;
                 if (!(halfWidth > 0) || !(halfHeight > 0))
@@ -156,10 +185,11 @@ namespace MotionPlay.Unity
 
             float progress = (float)game.DwellProgress;
             bool complete = game.Phase == ReachGardenPhase.Complete;
-            baseRenderer.transform.localScale = Vector3.one * (2 * targetRadius);
+            float radius = (float)game.TargetRadius;
+            baseRenderer.transform.localScale = Vector3.one * (2 * radius);
             baseRenderer.color = complete ? RestartRing : Dry;
             // The fill grows from the center as the dwell progresses and warms toward green.
-            fillRenderer.transform.localScale = Vector3.one * (2 * targetRadius * progress);
+            fillRenderer.transform.localScale = Vector3.one * (2 * radius * progress);
             fillRenderer.color = Color.Lerp(Growing, Bloomed, progress);
         }
 
@@ -206,12 +236,12 @@ namespace MotionPlay.Unity
         private void OnGUI()
         {
             if (game == null) return;
-            GUILayout.BeginArea(new Rect(Screen.width - 316, 16, 300, game.Phase == ReachGardenPhase.Complete ? 240 : 110), GUI.skin.box);
-            GUILayout.Label("MotionPlay — Reach Garden");
+            GUILayout.BeginArea(new Rect(Screen.width - 316, 16, 300, game.Phase == ReachGardenPhase.Complete ? 290 : 130), GUI.skin.box);
+            GUILayout.Label("MotionPlay — Reach Garden  |  Level " + difficulty.Level + (adaptive ? " (auto)" : ""));
             switch (game.Phase)
             {
                 case ReachGardenPhase.WaitingForHand:
-                    GUILayout.Label("Show your hand to begin.");
+                    GUILayout.Label("Show your hand to begin. [ and ] change level.");
                     break;
                 case ReachGardenPhase.Playing:
                     GUILayout.Label("Flower " + (game.TargetIndex + 1) + " of " + game.TargetCount +
@@ -225,7 +255,8 @@ namespace MotionPlay.Unity
                     GUILayout.Label("Reaction " + Seconds(stats.AverageReactionTime) + "  Movement " + Seconds(stats.AverageMovementTime));
                     GUILayout.Label("Hold stability " + Percent(stats.AverageHoldStability) + "  Path efficiency " + Percent(stats.AveragePathEfficiency));
                     GUILayout.Label("Time " + stats.DurationSeconds.ToString("0.0") + " s  |  " + DeliveryText());
-                    GUILayout.Label("Hold the cursor on the blue circle (or press R) to play again.");
+                    if (levelNotice != null) GUILayout.Label(levelNotice);
+                    GUILayout.Label("Hold the cursor on the blue circle (or press R) to play again. [ and ] change level.");
                     break;
             }
             GUILayout.EndArea();

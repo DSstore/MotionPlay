@@ -88,11 +88,41 @@ def when(milliseconds: int | None) -> str:
     return datetime.fromtimestamp(milliseconds / 1000).astimezone().strftime("%Y-%m-%d %H:%M")
 
 
+LEVEL_PREFIX = "level_"
+MIN_LEVEL, MAX_LEVEL, DEFAULT_LEVEL = 1, 5, 3
+
+
+def level_of(document: dict) -> int | None:
+    """Difficulty level a round was played at, from its ``difficulty`` label.
+
+    ``level_1`` to ``level_5`` are adaptive levels. ``default`` (rounds saved before adaptive difficulty)
+    used the original rules, which are level 3. Anything else is unknown (None)."""
+    label = document.get("difficulty")
+    if label == "default":
+        return DEFAULT_LEVEL
+    if isinstance(label, str) and label.startswith(LEVEL_PREFIX):
+        digits = label[len(LEVEL_PREFIX):]
+        if digits.isascii() and digits.isdigit() and MIN_LEVEL <= int(digits) <= MAX_LEVEL:
+            return int(digits)
+    return None
+
+
+def level_text(document: dict) -> str:
+    level = level_of(document)
+    return NO_VALUE if level is None else str(level)
+
+
+def mixed_levels(documents: list[dict]) -> bool:
+    """True if the rounds were played at more than one known difficulty level."""
+    return len({level for level in map(level_of, documents) if level is not None}) > 1
+
+
 def table_row(document: dict) -> list[str]:
     """Cells for one round, in the dashboard's column order."""
     return [
         when(document["endedAt"]),
         document["hand"],
+        level_text(document),
         f"{document['targetsCompleted']}/{document['targetsAttempted']}",
         percent(document["accuracy"]),
         seconds(document["averageReactionTime"]),
@@ -103,4 +133,4 @@ def table_row(document: dict) -> list[str]:
     ]
 
 
-TABLE_HEADERS = ["Played", "Hand", "Watered", "Accuracy", "Reaction", "Movement", "Stability", "Efficiency", "Time"]
+TABLE_HEADERS = ["Played", "Hand", "Level", "Watered", "Accuracy", "Reaction", "Movement", "Stability", "Efficiency", "Time"]

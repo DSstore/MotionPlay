@@ -151,7 +151,7 @@ samples are sent as explicit `null`, never zero.
 | `type`, `version` | string, int | `"SESSION_END"`, `1` |
 | `stream_id`, `session_id` | string | Canonical UUIDs; `session_id` identifies the round and makes repeats idempotent |
 | `sequence`, `timestamp` | int | Nonnegative; timestamp is UTC milliseconds |
-| `game`, `difficulty` | string | 1 to 64 / 1 to 32 characters (`reach_garden`, `default`) |
+| `game`, `difficulty` | string | 1 to 64 / 1 to 32 characters (`reach_garden`; `level_1` to `level_5`, or `default` for rounds saved before Phase 15) |
 | `hand` | string | `left` or `right`, the hand that played |
 | `startedAt`, `endedAt` | int | UTC milliseconds, `endedAt` not before `startedAt` |
 | `duration` | number | Seconds, at least 0 |
