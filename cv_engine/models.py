@@ -64,6 +64,9 @@ class TrackedHand:
     hand: Literal["left", "right"]
     handedness_confidence: float
     landmarks: tuple[Landmark, ...]
+    # True when label continuity overrode MediaPipe's label or confidence for this frame
+    # (see cv_engine.continuity). handedness_confidence still holds MediaPipe's original value.
+    label_corrected: bool = False
 
 
 @dataclass(frozen=True)

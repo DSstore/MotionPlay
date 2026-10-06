@@ -46,7 +46,11 @@ class PositionProcessor:
             confidence = hand.handedness_confidence
             if hand.hand not in {"left", "right"}:
                 continue
-            if not math.isfinite(confidence) or not self.settings.min_handedness_confidence <= confidence <= 1:
+            if not math.isfinite(confidence):
+                continue
+            # Continuity vouches for a hand that sits where a tracked hand just was, so the label's low
+            # confidence (or the flipped label) is not held against it.
+            if not hand.label_corrected and not self.settings.min_handedness_confidence <= confidence <= 1:
                 continue
             previous = accepted.get(hand.hand)
             if previous is None or confidence > previous.handedness_confidence:

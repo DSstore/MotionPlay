@@ -49,9 +49,16 @@ class ControlSettings:
     dead_zone: float = 0.008
     min_handedness_confidence: float = 0.75
     tracking_timeout: float = 0.5
+    # A hand that clearly continues one tracked within this many seconds keeps that hand's label even if
+    # MediaPipe briefly flips it or reports low confidence. 0 disables the correction.
+    continuity_seconds: float = 0.3
+    # How far (normalized image distance) the palm may move between frames and still count as the same hand.
+    continuity_radius: float = 0.25
 
     def __post_init__(self) -> None:
         checks = (
+            ("CONTROL_CONTINUITY_SECONDS", self.continuity_seconds, 0 <= self.continuity_seconds <= 1),
+            ("CONTROL_CONTINUITY_RADIUS", self.continuity_radius, 0 < self.continuity_radius <= 1),
             ("SMOOTHING_ALPHA", self.smoothing_alpha, 0 < self.smoothing_alpha <= 1),
             ("SMOOTHING_DEAD_ZONE", self.dead_zone, 0 <= self.dead_zone <= 1),
             ("CONTROL_MIN_HANDEDNESS_CONFIDENCE", self.min_handedness_confidence,
@@ -252,6 +259,8 @@ def load_settings(
             dead_zone=_confidence(values, "SMOOTHING_DEAD_ZONE", 0.008),
             min_handedness_confidence=_confidence(values, "CONTROL_MIN_HANDEDNESS_CONFIDENCE", 0.75),
             tracking_timeout=_positive_float(values, "CONTROL_TRACKING_TIMEOUT", 0.5),
+            continuity_seconds=_confidence(values, "CONTROL_CONTINUITY_SECONDS", 0.3),
+            continuity_radius=_confidence(values, "CONTROL_CONTINUITY_RADIUS", 0.25),
         ),
         gestures=GestureSettings(
             debounce_frames=_integer(values, "GESTURE_DEBOUNCE_FRAMES", 5, 1, 60),

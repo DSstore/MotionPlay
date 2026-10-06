@@ -68,6 +68,8 @@ SMOOTHING_ALPHA=0.35
 SMOOTHING_DEAD_ZONE=0.008
 CONTROL_MIN_HANDEDNESS_CONFIDENCE=0.75
 CONTROL_TRACKING_TIMEOUT=0.5
+CONTROL_CONTINUITY_SECONDS=0.3
+CONTROL_CONTINUITY_RADIUS=0.25
 ```
 
 | Setting | Valid range | Meaning |
@@ -76,6 +78,8 @@ CONTROL_TRACKING_TIMEOUT=0.5
 | `SMOOTHING_DEAD_ZONE` | 0 through 1 | Normalized XY hold radius; 0 disables it |
 | `CONTROL_MIN_HANDEDNESS_CONFIDENCE` | 0 through 1 | Minimum left/right classification confidence |
 | `CONTROL_TRACKING_TIMEOUT` | Finite positive seconds | Maximum gap before clearing filter history |
+| `CONTROL_CONTINUITY_SECONDS` | 0 through 1 | A hand detected where a tracked hand was this recently keeps that hand's label; 0 turns label continuity off |
+| `CONTROL_CONTINUITY_RADIUS` | Greater than 0, at most 1 | Largest palm movement between frames (normalized image distance) still treated as the same hand |
 
 From the MotionPlay folder on Windows:
 
@@ -104,3 +108,18 @@ All 57 automated tests passed, including 24 new tests for palm-joint selection, 
 The import health check passed. A real MediaPipe model also processed five blank synthetic frames through the position processor and in-memory preview without creating control positions or modifying the input image. An invalid smoothing alpha produced a named configuration error and exit code `1` before webcam access. These checks exercise software integration rather than live tracking.
 
 Live webcam movement, perceived jitter/lag, window interaction, and achieved camera FPS still require checking on the Windows machine. The managed cloud has no webcam or desktop display. No live hand-detection or clinical validation is claimed.
+
+## Label continuity
+
+MediaPipe labels each frame's hand as left or right on its own, so one hand being moved can briefly come back as the other hand or with a confidence under `CONTROL_MIN_HANDEDNESS_CONFIDENCE`. With a single control hand that makes the cursor disappear for a frame or two, which in a game pauses timers and drains dwell progress.
+
+`cv_engine/continuity.py` corrects only the clear cases, before the position and gesture processors run:
+
+- **Flipped label:** a detection whose label has no recent track, sitting within `CONTROL_CONTINUITY_RADIUS` of the other label's track from the last `CONTROL_CONTINUITY_SECONDS`, takes that label (unless the other label is also detected this frame).
+- **Low confidence:** a detection with a recently tracked label, still within the radius, is accepted despite a confidence below the gate.
+- **Never invented:** a hand with no recent tracked history, or one that appears far from the old track, is left exactly as MediaPipe reported it. A weak frame never starts or extends a track.
+- Corrected hands are marked `label_corrected`; `handedness_confidence` keeps MediaPipe's original value. The 5-second log line reports the number of corrections so far.
+
+If a genuine hand swap ever looks wrong in play, set `CONTROL_CONTINUITY_SECONDS=0` to turn it off.
+
+Measured offline on two 20-second recordings with the hand in view, 93% and 96% of frames were usable for the right-hand control; the fix could raise that toward 100% where the mislabeled frames stayed near the tracked hand. That is an upper bound from labels only (positions were not recorded), so confirm with a live run.

@@ -27,6 +27,7 @@ def run_tracking(
     import cv2
 
     from cv_engine.camera import Camera
+    from cv_engine.continuity import LabelContinuity
     from cv_engine.hand_tracker import HandTracker
     from cv_engine.gesture_processor import GestureProcessor
     from cv_engine.position_processor import PositionProcessor
@@ -43,6 +44,7 @@ def run_tracking(
         sender = stack.enter_context(UdpSender(
             settings.udp_host, settings.cv_to_unity_port, settings.sender, settings.camera.mirror,
         )) if send_udp else None
+        continuity = LabelContinuity(settings.control)
         processor = PositionProcessor(settings.control)
         gesture_processor = GestureProcessor(settings.gestures, settings.control)
         LOGGER.info("Tracking started. Frames stay local; UDP numerical states %s.",
@@ -57,6 +59,7 @@ def run_tracking(
             result = tracker.process(frame)
             frame_count += 1
             now = perf_counter()
+            result = continuity.apply(result, now)
             controls = processor.update(result, now)
             gestures = gesture_processor.update(result, controls, now, frame.shape[1] / frame.shape[0])
             if sender is not None:
@@ -66,7 +69,8 @@ def run_tracking(
                 LOGGER.info("Hand tracking restored." if controls.tracking else "Hand tracking lost.")
                 previous_tracking = controls.tracking
             if now - last_report_at >= 5:
-                LOGGER.info("Loop FPS %.1f; latest MediaPipe processing %.1f ms.", loop_fps, result.processing_ms)
+                LOGGER.info("Loop FPS %.1f; latest MediaPipe processing %.1f ms; label corrections so far: %d.",
+                            loop_fps, result.processing_ms, continuity.corrections)
                 if sender is not None:
                     LOGGER.info("UDP totals: %d accepted, %d failed, %d frames skipped; delivery unconfirmed.",
                                 sender.sent, sender.failed, sender.skipped)
