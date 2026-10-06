@@ -2,6 +2,8 @@
 
 ## Windows 11
 
+Fastest route: double-click `MotionPlay-Setup.cmd` in the project folder; it performs the steps below (see [Phase 18](phase18_setup_scripts.md)). The manual commands:
+
 Install 64-bit Python 3.11 from python.org with the Python launcher enabled. Check it in PowerShell:
 
 ```powershell
