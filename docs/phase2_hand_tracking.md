@@ -59,6 +59,7 @@ Add these settings to your existing `.env`, or use the updated `.env.example` fo
 | `CAMERA_HEIGHT` | `480` | Requested height, 120–4320 pixels. |
 | `CAMERA_FPS` | `30` | Requested capture FPS, 1–120. |
 | `CAMERA_MIRROR` | `true` | Mirror capture before inference and preview. |
+| `CAMERA_BACKEND` | `auto` | How OpenCV opens the camera: `auto` (DirectShow on Windows, with a fallback to OpenCV's default if it cannot open the camera), `dshow`, `msmf`, or `default`. |
 | `TRACKING_MAX_HANDS` | `1` | Detect up to 1 or 2 hands. |
 | `TRACKING_MODEL_COMPLEXITY` | `1` | Bundled model: 0 lighter, 1 full. |
 | `TRACKING_DETECTION_CONFIDENCE` | `0.6` | MediaPipe palm detection threshold, 0–1. |
@@ -88,3 +89,16 @@ Use these observations to verify live detection before progressing to Phase 3. A
 - MediaPipe may print native XNNPACK initialization and feedback-tensor warnings to stderr. They occurred during successful smoke checks; Python logging does not control those native messages.
 
 Cloud verification passed 33 automated tests, the existing import health check, real initialization of both hand models, and five synthetic blank frames per model with no hand detections. Missing-camera, missing-display, and invalid-frame-limit checks produced the expected error messages and exit codes. Synthetic blanks check model execution and empty results; they do not validate detection on real hands, handedness on a real camera, GUI interaction, or live performance. Those local checks remain pending.
+
+## Camera backend and slow start-ups
+
+On Windows, OpenCV's default backend (Media Foundation) took between 6 and 29 seconds to open the test webcam, and nothing, including Ctrl+C,
+can interrupt the camera while it opens. `CAMERA_BACKEND=auto` now opens it with DirectShow instead, which took about 2.5 seconds in the
+same engine run (about 1.2 seconds for the bare open). The resolution, 30 FPS and image brightness were the same on both backends.
+
+- If DirectShow cannot open the camera, `auto` logs a warning and retries with OpenCV's default backend.
+- An explicit `dshow`, `msmf` or `default` is used as given, with no fallback.
+- The log records the backend used (`Webcam opened via DSHOW`) and how long opening took, with a warning above 5 seconds.
+- Properties the camera already reports at the requested value (usually the 640x480 size) are not set again. Each set took over a second on DirectShow.
+
+If your camera misbehaves with DirectShow (a black image, wrong size, or a failed open), set `CAMERA_BACKEND=msmf` in `.env` to go back.

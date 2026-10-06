@@ -61,39 +61,41 @@ def run_tracking(
         previous_tracking = False
         frame_count = 0
         lost_events = 0
-        while max_frames is None or frame_count < max_frames:
-            frame = camera.read()
-            if settings.camera.mirror:
-                frame = cv2.flip(frame, 1)
-            result = tracker.process(frame)
-            frame_count += 1
-            now = perf_counter()
-            result = continuity.apply(result, now)
-            controls = processor.update(result, now)
-            gestures = gesture_processor.update(result, controls, now, frame.shape[1] / frame.shape[0])
-            if sender is not None:
-                sender.send(controls, gestures, now)
-            loop_fps = frame_count / max(now - started_at, 1e-9)
-            if controls.tracking != previous_tracking:
-                LOGGER.info("Hand tracking restored." if controls.tracking else "Hand tracking lost.")
-                lost_events += not controls.tracking
-                previous_tracking = controls.tracking
-            if now - last_report_at >= 5:
-                LOGGER.info("Loop FPS %.1f; latest MediaPipe processing %.1f ms; label corrections so far: %d.",
-                            loop_fps, result.processing_ms, continuity.corrections)
+        try:
+            while max_frames is None or frame_count < max_frames:
+                frame = camera.read()
+                if settings.camera.mirror:
+                    frame = cv2.flip(frame, 1)
+                result = tracker.process(frame)
+                frame_count += 1
+                now = perf_counter()
+                result = continuity.apply(result, now)
+                controls = processor.update(result, now)
+                gestures = gesture_processor.update(result, controls, now, frame.shape[1] / frame.shape[0])
                 if sender is not None:
-                    LOGGER.info("UDP totals: %d accepted, %d failed, %d frames skipped; delivery unconfirmed.",
-                                sender.sent, sender.failed, sender.skipped)
-                last_report_at = now
-            if preview is not None and not preview.show(frame, result, loop_fps, controls, gestures):
-                break
-            if preview is None and stop_requested():
-                LOGGER.info("Stop key pressed.")
-                break
-        elapsed = perf_counter() - started_at
-        LOGGER.info("Tracking finished after %d frame(s) in %.1f s (average %.1f FPS); hand lost %d time(s); "
-                    "%d label correction(s).", frame_count, elapsed, frame_count / max(elapsed, 1e-9),
-                    lost_events, continuity.corrections)
+                    sender.send(controls, gestures, now)
+                loop_fps = frame_count / max(now - started_at, 1e-9)
+                if controls.tracking != previous_tracking:
+                    LOGGER.info("Hand tracking restored." if controls.tracking else "Hand tracking lost.")
+                    lost_events += not controls.tracking
+                    previous_tracking = controls.tracking
+                if now - last_report_at >= 5:
+                    LOGGER.info("Loop FPS %.1f; latest MediaPipe processing %.1f ms; label corrections so far: %d.",
+                                loop_fps, result.processing_ms, continuity.corrections)
+                    if sender is not None:
+                        LOGGER.info("UDP totals: %d accepted, %d failed, %d frames skipped; delivery unconfirmed.",
+                                    sender.sent, sender.failed, sender.skipped)
+                    last_report_at = now
+                if preview is not None and not preview.show(frame, result, loop_fps, controls, gestures):
+                    break
+                if preview is None and stop_requested():
+                    LOGGER.info("Stop key pressed.")
+                    break
+        finally:  # Also runs on Ctrl+C or an error, so the run summary is never lost.
+            elapsed = perf_counter() - started_at
+            LOGGER.info("Tracking finished after %d frame(s) in %.1f s (average %.1f FPS); hand lost %d time(s); "
+                        "%d label correction(s).", frame_count, elapsed, frame_count / max(elapsed, 1e-9),
+                        lost_events, continuity.corrections)
         return frame_count
 
 

@@ -82,7 +82,7 @@ class CameraTests(unittest.TestCase):
         capture = factory.return_value
         capture.isOpened.return_value = False
         with self.assertRaisesRegex(CameraError, "camera permissions"):
-            Camera(CameraSettings()).open()
+            Camera(CameraSettings(backend="default")).open()
         capture.release.assert_called_once()
 
     @patch("cv_engine.camera.cv2.VideoCapture")
@@ -92,7 +92,7 @@ class CameraTests(unittest.TestCase):
         capture.get.return_value = 30.0
         capture.read.return_value = (True, np.zeros((4, 6, 3), dtype=np.uint8))
         with self.assertRaisesRegex(RuntimeError, "test failure"):
-            with Camera(CameraSettings(index=2)) as camera:
+            with Camera(CameraSettings(index=2, backend="default")) as camera:
                 self.assertEqual(camera.read().shape, (4, 6, 3))
                 raise RuntimeError("test failure")
         factory.assert_called_once_with(2)

@@ -20,6 +20,9 @@ class ConfigurationError(ValueError):
     """A configuration setting is missing or invalid."""
 
 
+CAMERA_BACKENDS = ("auto", "dshow", "msmf", "default")
+
+
 @dataclass(frozen=True)
 class CameraSettings:
     """Requested capture settings; a device may negotiate different dimensions/FPS."""
@@ -29,6 +32,13 @@ class CameraSettings:
     height: int = 480
     fps: int = 30
     mirror: bool = True
+    # How OpenCV talks to the camera. auto = DirectShow on Windows (its default Media Foundation backend can take
+    # several seconds to open some webcams), with a fallback to OpenCV's default if DirectShow cannot open it.
+    backend: str = "auto"
+
+    def __post_init__(self) -> None:
+        if self.backend not in CAMERA_BACKENDS:
+            raise ConfigurationError("CAMERA_BACKEND must be auto, dshow, msmf, or default.")
 
 
 @dataclass(frozen=True)
@@ -247,6 +257,7 @@ def load_settings(
             height=_integer(values, "CAMERA_HEIGHT", 480, 120, 4320),
             fps=_integer(values, "CAMERA_FPS", 30, 1, 120),
             mirror=_boolean(values, "CAMERA_MIRROR", True),
+            backend=_value(values, "CAMERA_BACKEND", "auto").lower(),
         ),
         tracking=TrackingSettings(
             max_hands=_integer(values, "TRACKING_MAX_HANDS", 1, 1, 2),

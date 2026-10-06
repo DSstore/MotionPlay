@@ -274,6 +274,23 @@ class EngineLogTests(unittest.TestCase):
         self.assertIn("hand lost 1 time(s)", text)
         self.assertIn("0 label correction(s)", text)
 
+    def test_the_summary_is_still_logged_when_the_run_ends_with_ctrl_c_or_an_error(self) -> None:
+        for interruption in (KeyboardInterrupt(), RuntimeError("camera exploded")):
+            with self.subTest(type(interruption).__name__):
+                with tempfile.TemporaryDirectory() as directory:
+                    settings = load_settings(Path(directory) / ".env", environ={})
+                with patch("cv_engine.hand_tracker.HandTracker") as tracker_factory, \
+                        patch("cv_engine.camera.Camera") as camera_factory:
+                    camera_factory.return_value.__enter__.return_value.read.return_value = np.zeros((4, 6, 3), np.uint8)
+                    tracker_factory.return_value.__enter__.return_value.process.side_effect = [
+                        frame(hand()), frame(), interruption]
+                    with self.assertLogs("motionplay.cv_engine.controller", level="INFO") as logs:
+                        with self.assertRaises(type(interruption)):
+                            run_tracking(settings, show_preview=False, max_frames=10, send_udp=False)
+                text = "\n".join(logs.output)
+                self.assertIn("Tracking finished after 2 frame(s)", text)
+                self.assertIn("hand lost 1 time(s)", text)
+
     def test_the_summary_counts_a_lost_hand_each_time_it_is_lost(self) -> None:
         self.assertIn("hand lost 0 time(s)", self.run_loop(2))
 

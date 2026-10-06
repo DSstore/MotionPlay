@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 import time
 from types import TracebackType
 
@@ -21,6 +22,16 @@ class CameraError(CVEngineError):
     """Webcam opening or frame acquisition failed."""
 
 
+def backend_flag(name: str, platform: str | None = None) -> int | None:
+    """OpenCV capture-backend constant for a CAMERA_BACKEND value; None means OpenCV's own default."""
+    platform = sys.platform if platform is None else platform
+    if name == "dshow" or (name == "auto" and platform.startswith("win")):
+        return cv2.CAP_DSHOW
+    if name == "msmf":
+        return cv2.CAP_MSMF
+    return None
+
+
 class Camera:
     """An explicitly opened webcam; constructing this object accesses no device."""
 
@@ -35,7 +46,7 @@ class Camera:
         LOGGER.info("Opening webcam index %d.", self.settings.index)
         started = time.perf_counter()
         try:
-            self._capture = cv2.VideoCapture(self.settings.index)
+            self._capture = self._open_capture()
             if not self._capture.isOpened():
                 raise CameraError(
                     f"Cannot open webcam index {self.settings.index}. Connect a webcam, "
@@ -46,10 +57,13 @@ class Camera:
                 (cv2.CAP_PROP_FRAME_HEIGHT, self.settings.height),
                 (cv2.CAP_PROP_FPS, self.settings.fps),
             ):
+                if abs(self._capture.get(property_id) - requested) < 0.5:
+                    continue  # Already what we want; setting it again can take over a second on DirectShow.
                 if not self._capture.set(property_id, requested):
                     LOGGER.debug("Webcam declined capture property %d.", property_id)
             LOGGER.info(
-                "Webcam opened; reported capture %.0fx%.0f at %.1f FPS (device report, not measured).",
+                "Webcam opened via %s; reported capture %.0fx%.0f at %.1f FPS (device report, not measured).",
+                self._capture.getBackendName(),
                 self._capture.get(cv2.CAP_PROP_FRAME_WIDTH),
                 self._capture.get(cv2.CAP_PROP_FRAME_HEIGHT),
                 self._capture.get(cv2.CAP_PROP_FPS),
@@ -57,7 +71,8 @@ class Camera:
             elapsed = time.perf_counter() - started
             if elapsed > SLOW_OPEN_SECONDS:
                 LOGGER.warning("Opening the webcam took %.1f s. Other camera apps or the camera driver can cause "
-                               "slow starts; Ctrl+C is not handled until it finishes.", elapsed)
+                               "slow starts (CAMERA_BACKEND in .env picks the camera backend); Ctrl+C is not handled "
+                               "until it finishes.", elapsed)
             else:
                 LOGGER.info("Opening the webcam took %.1f s.", elapsed)
         except (CameraError, cv2.error):
@@ -66,6 +81,16 @@ class Camera:
                 f"Cannot open webcam index {self.settings.index}. Connect a webcam, "
                 "check CAMERA_INDEX and camera permissions, and close other camera apps."
             ) from None
+
+    def _open_capture(self) -> cv2.VideoCapture:
+        """Open the device with the configured backend. For ``auto``, fall back to OpenCV's default if DirectShow fails."""
+        flag = backend_flag(self.settings.backend)
+        capture = cv2.VideoCapture(self.settings.index) if flag is None else cv2.VideoCapture(self.settings.index, flag)
+        if self.settings.backend == "auto" and flag is not None and not capture.isOpened():
+            LOGGER.warning("DirectShow could not open webcam %d; trying OpenCV's default backend.", self.settings.index)
+            capture.release()
+            capture = cv2.VideoCapture(self.settings.index)
+        return capture
 
     def read(self) -> VideoFrame:
         """Read one BGR image or report an unavailable/disconnected camera."""
