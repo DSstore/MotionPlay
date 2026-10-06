@@ -179,7 +179,7 @@ are marked, and the comparison says it is then not like-for-like. See [Phase 13]
 
 | Layer | What it covers | Count (at time of writing) |
 |---|---|---|
-| Python unit and integration tests | Every Python module, including real loopback sockets and Qt windows run offscreen | 343 tests, 96% line and branch coverage |
+| Python unit and integration tests | Every Python module, including real loopback sockets and Qt windows run offscreen | 355 tests, 96% line and branch coverage |
 | C# harness | The exact `Core` source files Unity compiles, plus the Editor-mode tests, run under .NET without Unity | 118 tests |
 | Cross-language check | Real Python-to-C# UDP delivery with cursor-coordinate assertions | 2 checks |
 | Script tests | Setup, start and test scripts: parsing, refusing unsafe input, `-CheckOnly` and `-DryRun` changing nothing | 13 tests (Windows) |

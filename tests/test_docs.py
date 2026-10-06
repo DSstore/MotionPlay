@@ -50,12 +50,22 @@ class LinkTests(unittest.TestCase):
                     broken.append(f"{source.relative_to(ROOT)} -> {target} (no such heading)")
         self.assertEqual([], broken)
 
+    def test_every_image_in_the_documents_exists(self) -> None:
+        missing = []
+        for source in MARKDOWN:
+            text = re.sub(r"<!--.*?-->", "", re.sub(r"```.*?```", "", read(source), flags=re.DOTALL), flags=re.DOTALL)
+            for target in re.findall(r"!\[[^\]]*\]\(([^)\s]+)\)", text):
+                if not re.match(r"^https?:", target) and not (source.parent / target).resolve().exists():
+                    missing.append(f"{source.relative_to(ROOT)} -> {target}")
+        self.assertEqual([], missing)
+
     def test_the_readme_links_to_every_phase_guide_and_the_main_documents(self) -> None:
         readme = read(ROOT / "README.md")
         for guide in sorted(DOCS.glob("phase*.md")):
             with self.subTest(guide.name):
                 self.assertIn(f"docs/{guide.name}", readme)
-        for name in ("architecture.md", "configuration.md", "udp_protocol.md", "setup.md"):
+        for name in ("architecture.md", "configuration.md", "udp_protocol.md", "setup.md", "performance.md",
+                     "lessons-learned.md", "demo-guide.md"):
             with self.subTest(name):
                 self.assertIn(f"docs/{name}", readme)
 
@@ -143,6 +153,19 @@ class ConfigurationReferenceTests(unittest.TestCase):
         read_keys -= {"INFO", "DEBUG", "WARNING", "ERROR", "CRITICAL"}
         missing = sorted(k for k in read_keys if k.isupper() and "_" in k and k not in documented_settings())
         self.assertEqual([], missing, "settings the code reads but configuration.md does not document")
+
+
+class WorkflowTests(unittest.TestCase):
+    def test_the_ci_workflow_runs_the_same_checks_as_the_test_script(self) -> None:
+        workflow = read(ROOT / ".github" / "workflows" / "tests.yml")
+        script = read(ROOT / "scripts" / "test.ps1")
+        for expected in ('python-version: "3.11"', "unittest discover -s tests", "MotionPlay.ReceiverHarness.csproj",
+                         "tests.check_python_unity_udp", "requirements-dev.txt"):
+            with self.subTest(expected):
+                self.assertIn(expected, workflow)
+        # What the local script runs and what CI runs must stay the same set of checks.
+        for check in ("unittest", "MotionPlay.ReceiverHarness.csproj", "tests.check_python_unity_udp"):
+            self.assertIn(check, script)
 
 
 if __name__ == "__main__":

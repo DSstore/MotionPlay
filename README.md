@@ -19,6 +19,35 @@ numbers from a prototype game, not medical improvement, and are not a basis for 
 - **Players and a dashboard.** Local accounts with bcrypt passwords, and a PyQt6 dashboard of your rounds, charts, and a PDF progress report.
 - **Windows setup and start scripts** with double-click launchers, and a large automated test suite that needs no hardware.
 
+## Highlights
+
+- **Two processes, one small protocol.** Vision in Python, gameplay in Unity, joined by two UDP messages: a lossy "latest wins" hand-state stream and an acknowledged, idempotent result message, each with the delivery guarantee it needs.
+- **Logic you can test without hardware.** Rules, statistics, difficulty and retry bookkeeping are engine-free, so 118 C# tests run the same source files Unity compiles, alongside 355 Python tests at 96% coverage.
+- **Problems found and fixed with data, not guesses.** A vanishing cursor was traced to MediaPipe's left/right label flipping during motion and fixed with a continuity stage; a 6 to 29 second camera start was found by logging and cut to about 2.6 s. The [retrospective](docs/lessons-learned.md) tells it honestly, including the wrong turns.
+- **Honest about limits.** The [performance write-up](docs/performance.md) says what was and was not measured, and the status table below says what has been checked on real hardware.
+- **Documentation that is tested.** Links, diagrams and the configuration reference are checked against the code on every run.
+
+## Screenshots
+
+The images below are generated from **invented demo data** (an imaginary player named `demo`) by `tools/make_demo_assets.py`; they show the real interface, not real play. A short clip of the game and a picture of the hand
+tracking need a camera and Unity, so they are not included yet ([how to add them](docs/demo-guide.md)).
+
+| Dashboard | Login |
+|---|---|
+| ![The dashboard: summary cards, accuracy and reaction-time charts, and a table of rounds](docs/images/dashboard.png) | ![The login window](docs/images/login.png) |
+
+| Report: summary and progress | Report: trends |
+|---|---|
+| ![Page 1 of a progress report: summary table and earlier-versus-later comparison](docs/images/report-summary.png) | ![Page 2 of a progress report: trend charts](docs/images/report-trends.png) |
+
+The full [sample report (PDF)](docs/images/sample-report.pdf) is generated from the same demo data.
+
+<!-- After recording (see docs/demo-guide.md), remove the comment markers and keep the lines you have files for:
+![Reach Garden being played](docs/images/demo.gif)
+![The hand-tracking preview with landmarks, raw palm and smoothed position](docs/images/tracking-preview.png)
+-->
+
+
 ## How it fits together
 
 ```mermaid
@@ -118,7 +147,7 @@ dotnet run --project tests/csharp/MotionPlay.ReceiverHarness.csproj -- --noresul
 .\.venv\Scripts\python.exe -m tests.check_python_unity_udp
 ```
 
-At the time of writing: **343 Python tests** (96% line and branch coverage), **118 C# tests** that compile the same source files Unity runs, and a real Python-to-C# UDP check. None needs a webcam, Unity, or a database server.
+At the time of writing: **355 Python tests** (96% line and branch coverage), **118 C# tests** that compile the same source files Unity runs, and a real Python-to-C# UDP check. None needs a webcam, Unity, or a database server.
 What cannot be automated (the Unity Editor and Play Mode, the live webcam, a real MongoDB server, real-display rendering) has a manual checklist in each phase guide. See [Phase 16](docs/phase16_testing.md).
 
 ## Project status
@@ -146,7 +175,7 @@ Developed and tested on one Windows 11 PC with one webcam. "Live" means exercise
 | 17 | Expanded logging and error handling | [guide](docs/phase17_logging.md) | Complete; observed in live runs |
 | 18 | Windows setup, start and test scripts | [guide](docs/phase18_setup_scripts.md) | From-scratch install and real launch checked |
 | 19 | Complete README and architecture documentation | [architecture](docs/architecture.md) | This phase |
-| 20 | Portfolio polish | | Not started: demo footage, screenshots, and performance write-up are still to come |
+| 20 | Portfolio polish | [performance](docs/performance.md), [lessons](docs/lessons-learned.md), [demo guide](docs/demo-guide.md) | Generated screenshots, charts, retrospective and changelog done; a game clip and a tracking screenshot still need your camera and Unity |
 
 Beyond the phases, two problems found in live play were fixed along the way: tracking flicker from MediaPipe's left/right label flipping ([continuity fix](docs/phase3_coordinates.md)) and a camera that took 6 to 29 seconds
 to open ([DirectShow backend](docs/phase2_hand_tracking.md)).
@@ -164,6 +193,10 @@ workflow; Windows-only scripts. The full list, with reasons, is in the [architec
 | [Configuration reference](docs/configuration.md) | Every `.env` setting |
 | [UDP protocol](docs/udp_protocol.md) | The exact `CV_STATE`, `SESSION_END`, and `RESULT_ACK` packets |
 | [Setup and troubleshooting](docs/setup.md) | Manual setup, Linux and cloud notes, common failures |
+| [Performance](docs/performance.md) | What was measured on the development PC, with charts, and what was not |
+| [Challenges and lessons learned](docs/lessons-learned.md) | The hardest problems, how they were found, and what they taught |
+| [Recording the demo](docs/demo-guide.md) | How to add a game clip and a tracking screenshot |
+| [Changelog](CHANGELOG.md) | What changed, by phase |
 | Phase guides (2 to 18) | How each part works and a checklist to verify it |
 
 Reach Garden and any future games use original code, mechanics, and assets; no source, artwork, or UI is copied from other projects.
