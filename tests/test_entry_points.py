@@ -203,7 +203,7 @@ class ControllerMainTests(unittest.TestCase):
     def run_cli(self, argv: list[str], run=None, settings_error=None):
         stack = contextlib.ExitStack()
         self.addCleanup(stack.close)
-        stack.enter_context(patch("cv_engine.controller.configure_logging"))
+        stack.enter_context(patch("cv_engine.controller.start_logging"))
         stack.enter_context(patch("cv_engine.controller.load_settings",
                                   side_effect=settings_error, return_value=MagicMock()))
         runner = stack.enter_context(patch("cv_engine.controller.run_tracking", **(run or {"return_value": 0})))

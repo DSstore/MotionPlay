@@ -253,7 +253,7 @@ class LoopbackTests(unittest.TestCase):
             self.assertEqual(terminal.sequence, 2)
             self.assertFalse(terminal.tracking)
 
-    @patch("cv_engine.controller.perf_counter", side_effect=[0, 0, 0.04, 0.08, 0.12, 0.16, 0.20])
+    @patch("cv_engine.controller.perf_counter", side_effect=[0, 0, 0.04, 0.08, 0.12, 0.16, 0.20, 0.24])
     @patch("cv_engine.hand_tracker.HandTracker")
     @patch("cv_engine.camera.Camera")
     def test_controller_transmits_confirmed_gesture_and_clears_loss(

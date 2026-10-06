@@ -6,6 +6,7 @@ read the database file or run code as the player, and it never leaves the machin
 
 from __future__ import annotations
 
+import logging
 import re
 import sqlite3
 import time
@@ -17,6 +18,8 @@ from uuid import uuid4
 import bcrypt
 
 from backend.storage import StorageError
+
+LOGGER = logging.getLogger("motionplay.backend.auth")
 
 USERNAME_PATTERN = re.compile(r"[A-Za-z0-9_.-]{3,32}")
 MIN_PASSWORD_CHARACTERS = 8
@@ -144,6 +147,7 @@ class UserStore:
             raise UsernameTaken("That username is already taken.") from None
         except sqlite3.Error as error:
             raise StorageError(f"User database write failed: {error}") from error
+        LOGGER.info("Player account created: %s.", username)
         return user
 
     def authenticate(self, username: str, password: str) -> User:
@@ -152,10 +156,14 @@ class UserStore:
             raise InvalidCredentials()
         row = self._row(username)
         if row is None:
+            # The typed name is not logged: someone may have typed a password into the username box.
+            LOGGER.warning("Login failed: no such account.")
             self._burn_time(password)
             raise InvalidCredentials()
         now = self._clock()
         if row["locked_until"] > now:
+            LOGGER.warning("Login refused: %s is locked for another %d s.", row["username"],
+                           row["locked_until"] - now)
             raise AccountLocked(row["locked_until"] - now)
         try:
             ok = (len(password.encode("utf-8")) <= MAX_PASSWORD_BYTES and "\x00" not in password
@@ -175,7 +183,14 @@ class UserStore:
         except sqlite3.Error as error:
             raise StorageError(f"User database write failed: {error}") from error
         if not ok:
+            attempts = row["failed_attempts"] + 1
+            if attempts >= self._max_attempts:
+                LOGGER.warning("Wrong password for %s; account locked for %d s.", row["username"], self._lockout)
+            else:
+                LOGGER.warning("Login failed for %s: wrong password (attempt %d of %d).", row["username"],
+                               attempts, self._max_attempts)
             raise InvalidCredentials()
+        LOGGER.info("Login: %s.", row["username"])
         return self._user(row)
 
     def change_password(self, username: str, old_password: str, new_password: str) -> None:
@@ -187,6 +202,7 @@ class UserStore:
                                  (self._hash(new_password), user.user_id))
         except sqlite3.Error as error:
             raise StorageError(f"User database write failed: {error}") from error
+        LOGGER.info("Password changed for %s.", user.username)
 
     def get_by_username(self, username: str) -> User | None:
         row = self._row(username) if isinstance(username, str) else None

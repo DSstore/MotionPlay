@@ -64,6 +64,7 @@ class HandTracker:
         if self._engine is not None:
             raise TrackingError("The hand tracker is already initialized.")
         LOGGER.info("Initializing MediaPipe Hands.")
+        started = perf_counter()
         try:
             import mediapipe as mp
 
@@ -79,7 +80,7 @@ class HandTracker:
                 "MediaPipe Hands initialization failed. Activate the Python 3.11 environment "
                 "and reinstall requirements.txt; check native-library errors in the logs."
             ) from error
-        LOGGER.info("MediaPipe Hands initialized.")
+        LOGGER.info("MediaPipe Hands initialized in %.1f s.", perf_counter() - started)
 
     def process(self, frame: VideoFrame) -> TrackingResult:
         """Process a BGR uint8 frame; the caller decides whether to mirror it."""

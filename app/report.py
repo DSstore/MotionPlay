@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import logging
 import os
 import sys
 import textwrap
@@ -27,12 +28,15 @@ from backend.result_receiver import add_store_arguments, store_from_args
 from backend.storage import StorageError
 from backend.users import Prompt, add_user_arguments, log_in
 from shared.config import PROJECT_ROOT, ConfigurationError, load_settings
+from shared.logger import start_logging
 
 PAGE_SIZE = (8.27, 11.69)  # A4 portrait, inches
 ROWS_PER_PAGE = 28
 MIN_ROUNDS_TO_COMPARE = 4
 MAX_ROUNDS = 5000
 DEFAULT_REPORT_DIR = PROJECT_ROOT / "reports"
+LOGGER = logging.getLogger("motionplay.app.report")
+
 DISCLAIMER = ("Gameplay measurements from a prototype game. This is not a medical device or therapy tool, "
               "and these numbers are not a basis for health conclusions.")
 
@@ -262,6 +266,7 @@ def main(argv: list[str] | None = None, *, prompt: Prompt = getpass.getpass, now
                 raise ConfigurationError("--since must be a date like 2026-10-01.") from None
             period = f"Since {args.since}"
         settings = load_settings()
+        start_logging(settings, "report", console=False)
         user = log_in(args.user, args.users_db, prompt, **auth_options)
         store = store_from_args(args.store, args.file, settings)
         documents = filter_period(store.list_sessions(user_id=user.user_id, limit=MAX_ROUNDS), since)
@@ -269,6 +274,7 @@ def main(argv: list[str] | None = None, *, prompt: Prompt = getpass.getpass, now
         out = args.out or DEFAULT_REPORT_DIR / default_filename(user.username, now)
         out = out if out.is_absolute() else Path.cwd() / out
         write_pdf(pages, out)
+        LOGGER.info("Report saved for %s: %d round(s), %d page(s), %s", user.username, len(documents), len(pages), out)
         print(f"Saved {len(pages)}-page report for {user.username} ({len(documents)} round(s)): {out}")
     except AuthError as error:
         print(f"Login failed: {error}", file=sys.stderr)

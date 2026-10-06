@@ -6,12 +6,13 @@ Run with:  .\.venv\Scripts\python.exe -m app.dashboard
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from datetime import datetime
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtWidgets import (QApplication, QDialog, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QHeaderView,
+from PyQt6.QtWidgets import (QApplication, QDialog, QFileDialog, QMessageBox, QFrame, QGridLayout, QHBoxLayout, QHeaderView,
                              QLabel, QLineEdit, QMainWindow, QPushButton, QSplitter, QStackedWidget,
                              QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
@@ -22,6 +23,9 @@ from backend.result_receiver import add_store_arguments, store_from_args
 from backend.storage import ResultStore, StorageError
 from backend.users import DEFAULT_USERS_DB, open_users
 from shared.config import ConfigurationError, load_settings
+from shared.logger import start_logging
+
+LOGGER = logging.getLogger("motionplay.app.dashboard")
 
 ROUND_LIMIT = 500  # The dashboard shows the most recent rounds only.
 REFRESH_MS = 5000
@@ -199,8 +203,10 @@ class DashboardWindow(QMainWindow):
             pages = build_report(documents, self._user.username, datetime.now())
             write_pdf(pages, path)
         except (ReportError, StorageError) as error:
+            LOGGER.warning("Report not saved for %s: %s", self._user.username, error)
             self.status_label.setText(f"Report not saved: {error}")
             return False
+        LOGGER.info("Report saved for %s: %d page(s), %s", self._user.username, len(pages), path)
         self.status_label.setText(f"Report saved ({len(pages)} pages): {path}")
         return True
 
@@ -216,6 +222,7 @@ class DashboardWindow(QMainWindow):
         try:
             documents = self._store.list_sessions(user_id=self._user.user_id, limit=ROUND_LIMIT)
         except StorageError as error:
+            LOGGER.warning("Could not read rounds for %s: %s", self._user.username, error)
             self.status_label.setText(f"Could not read rounds: {error}")
             return
         summary = model.summarize(documents)
@@ -269,6 +276,26 @@ class DashboardWindow(QMainWindow):
         self.canvas.draw_idle()
 
 
+def install_error_dialog(log_path: Path) -> None:
+    """Show unexpected errors in a message box instead of letting Qt abort the program.
+
+    Install after ``start_logging``: the hook it put in place records the error, then this one tells the player.
+    """
+    previous = sys.excepthook
+
+    def show(exc_type, exc, traceback) -> None:
+        previous(exc_type, exc, traceback)
+        if issubclass(exc_type, (KeyboardInterrupt, SystemExit)):
+            return
+        try:
+            QMessageBox.critical(None, "MotionPlay", f"Something unexpected went wrong:\n\n{exc}\n\n"
+                                 f"The details were saved to {log_path}.")
+        except Exception:  # Never let the error dialog itself raise inside the hook.
+            pass
+
+    sys.excepthook = show
+
+
 def run(store: ResultStore, users: UserStore, app: QApplication) -> int:
     """Log in, show the dashboard, and repeat after Log out until the player quits."""
     while True:
@@ -292,9 +319,11 @@ def main(argv: list[str] | None = None) -> int:
     store = users = None
     try:
         settings = load_settings()
+        start_logging(settings, "dashboard", console=False)
         store = store_from_args(args.store, args.file, settings)
         users = open_users(args.users_db)
         app = QApplication.instance() or QApplication(sys.argv[:1])
+        install_error_dialog(settings.log_dir / "motionplay.log")
         return run(store, users, app)
     except (ConfigurationError, StorageError, OSError) as error:
         print(f"Dashboard error: {error}", file=sys.stderr)

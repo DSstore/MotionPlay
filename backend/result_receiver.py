@@ -13,11 +13,14 @@ from pathlib import Path
 from backend.auth import AuthError
 from backend.storage import STORE_KINDS, ResultStore, StorageError, open_store
 from backend.users import add_user_arguments, log_in
+from shared.logger import start_logging
 from shared.config import PROJECT_ROOT, ConfigurationError, load_settings
 from shared.protocol import (MAX_DATAGRAM_BYTES, ProtocolError, decode_session_end,
                              encode_result_ack, peek_session_id)
 
 LOGGER = logging.getLogger("motionplay.backend.result_receiver")
+MAX_INVALID_LOGS = 5  # Invalid datagrams logged individually per window; the rest are counted.
+INVALID_LOG_WINDOW_SECONDS = 60.0
 POLL_SECONDS = 0.5  # How often serve() wakes up so Ctrl+C and stop requests are noticed.
 DEFAULT_FILES ={"jsonl": Path("data") / "results.jsonl", "sqlite": Path("data") / "motionplay.db"}
 
@@ -25,15 +28,33 @@ DEFAULT_FILES ={"jsonl": Path("data") / "results.jsonl", "sqlite": Path("data") 
 class ResultReceiver:
     """Socket-free core: bytes in, optional acknowledgement bytes out."""
 
-    def __init__(self, store: ResultStore, user_id: str | None = None) -> None:
+    def __init__(self, store: ResultStore, user_id: str | None = None, clock=time.monotonic) -> None:
         self._store = store
         self._user_id = user_id  # Every stored round belongs to this player; None means unassigned.
+        self._clock = clock
+        self._window_start = clock()
+        self._logged_invalid = 0
+        self._suppressed_invalid = 0
+
+    def _log_invalid(self, size: int, error: Exception) -> None:
+        """Log a rejected datagram, but at most MAX_INVALID_LOGS per minute so a noisy sender cannot flood the log."""
+        now = self._clock()
+        if now - self._window_start >= INVALID_LOG_WINDOW_SECONDS:
+            if self._suppressed_invalid:
+                LOGGER.warning("%d more invalid datagram(s) in the last minute were not logged one by one.",
+                               self._suppressed_invalid)
+            self._window_start, self._logged_invalid, self._suppressed_invalid = now, 0, 0
+        if self._logged_invalid < MAX_INVALID_LOGS:
+            self._logged_invalid += 1
+            LOGGER.warning("Rejected an invalid SESSION_END datagram (%d bytes): %s", size, error)
+        else:
+            self._suppressed_invalid += 1
 
     def handle(self, payload: bytes) -> bytes | None:
         try:
             result = decode_session_end(payload)
-        except ProtocolError:
-            LOGGER.warning("Rejected an invalid SESSION_END datagram.")
+        except ProtocolError as error:
+            self._log_invalid(len(payload), error)
             session_id = peek_session_id(payload)
             return encode_result_ack(session_id, "rejected") if session_id else None
         try:
@@ -41,7 +62,12 @@ class ResultReceiver:
         except StorageError as error:
             LOGGER.error("Result %s not stored: %s", result.session_id, error)
             return encode_result_ack(result.session_id, "error")
-        LOGGER.info("Result %s %s.", result.session_id, "stored" if created else "was already stored")
+        except Exception:  # Keep serving: Unity retries, and one bad store call must not end the receiver.
+            LOGGER.exception("Result %s not stored: unexpected error.", result.session_id)
+            return encode_result_ack(result.session_id, "error")
+        LOGGER.info("Result %s %s (%s, %s, %d of %d watered).", result.session_id,
+                    "stored" if created else "was already stored", result.game, result.difficulty,
+                    result.targetsCompleted, result.targetsAttempted)
         return encode_result_ack(result.session_id, "stored" if created else "duplicate")
 
 
@@ -105,10 +131,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-results", type=int, help="Exit after answering this many datagrams")
     parser.add_argument("--timeout", type=float, help="Exit after this many idle seconds")
     args = parser.parse_args(argv)
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     store: ResultStore | None = None
     try:
         settings = load_settings()
+        start_logging(settings, "result receiver")
         port = args.port if args.port is not None else settings.unity_to_python_port
         if not 1024 <= port <= 65535:
             raise ConfigurationError("Result port must be from 1024 to 65535.")

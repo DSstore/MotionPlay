@@ -288,7 +288,7 @@ class ControllerTests(unittest.TestCase):
             run_tracking(self.settings, show_preview=False, max_frames=1, send_udp=False)
         camera_factory.return_value.__exit__.assert_called_once()
 
-    @patch("cv_engine.controller.configure_logging")
+    @patch("cv_engine.controller.start_logging")
     @patch("cv_engine.controller.load_settings")
     @patch("cv_engine.controller.run_tracking", side_effect=CameraError("Webcam unavailable"))
     def test_cli_camera_failure_returns_one(

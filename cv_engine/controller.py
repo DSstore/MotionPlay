@@ -9,7 +9,7 @@ from contextlib import ExitStack
 from time import perf_counter
 
 from shared.config import ConfigurationError, Settings, load_settings
-from shared.logger import configure_logging
+from shared.logger import start_logging
 
 
 LOGGER = logging.getLogger("motionplay.cv_engine.controller")
@@ -50,11 +50,17 @@ def run_tracking(
         gesture_processor = GestureProcessor(settings.gestures, settings.control)
         LOGGER.info("Tracking started. Frames stay local; UDP numerical states %s.",
                     "enabled" if sender is not None else "disabled")
+        LOGGER.info("Settings: camera %d requested %dx%d mirror=%s; model complexity %d; max hands %d; "
+                    "control hand %s; label continuity %.2f s within %.2f.", settings.camera.index,
+                    settings.camera.width, settings.camera.height, settings.camera.mirror,
+                    settings.tracking.model_complexity, settings.tracking.max_hands, settings.sender.hand,
+                    settings.control.continuity_seconds, settings.control.continuity_radius)
         if preview is None:
             LOGGER.info("No preview window: press Q or Esc in this console (or Ctrl+C) to stop.")
         started_at = last_report_at = perf_counter()
         previous_tracking = False
         frame_count = 0
+        lost_events = 0
         while max_frames is None or frame_count < max_frames:
             frame = camera.read()
             if settings.camera.mirror:
@@ -70,6 +76,7 @@ def run_tracking(
             loop_fps = frame_count / max(now - started_at, 1e-9)
             if controls.tracking != previous_tracking:
                 LOGGER.info("Hand tracking restored." if controls.tracking else "Hand tracking lost.")
+                lost_events += not controls.tracking
                 previous_tracking = controls.tracking
             if now - last_report_at >= 5:
                 LOGGER.info("Loop FPS %.1f; latest MediaPipe processing %.1f ms; label corrections so far: %d.",
@@ -83,7 +90,10 @@ def run_tracking(
             if preview is None and stop_requested():
                 LOGGER.info("Stop key pressed.")
                 break
-        LOGGER.info("Tracking finished after %d frame(s).", frame_count)
+        elapsed = perf_counter() - started_at
+        LOGGER.info("Tracking finished after %d frame(s) in %.1f s (average %.1f FPS); hand lost %d time(s); "
+                    "%d label correction(s).", frame_count, elapsed, frame_count / max(elapsed, 1e-9),
+                    lost_events, continuity.corrections)
         return frame_count
 
 
@@ -107,14 +117,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         settings = load_settings()
-        configure_logging(settings)
+        start_logging(settings, "CV engine")
     except (ConfigurationError, OSError) as error:
         print(f"MotionPlay configuration/logging error: {error}", file=sys.stderr)
         return 1
 
     from cv_engine.errors import CVEngineError
 
-    LOGGER.info("MotionPlay CV engine starting.")
     try:
         run_tracking(settings, show_preview=not args.no_preview, max_frames=args.max_frames,
                      send_udp=not args.no_udp)

@@ -141,6 +141,8 @@ class DashboardMainTests(unittest.TestCase):
     def run_main(self, argv, **patches):
         stack = contextlib.ExitStack()
         self.addCleanup(stack.close)
+        for quiet in ("start_logging", "install_error_dialog"):  # keep logging and the global error hook out of tests
+            stack.enter_context(patch(f"app.dashboard.{quiet}"))
         mocks = {name: stack.enter_context(patch(f"app.dashboard.{name}", **options))
                  for name, options in patches.items()}
         err = io.StringIO()

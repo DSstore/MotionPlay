@@ -14,7 +14,8 @@ from typing import Callable
 
 from backend.auth import AuthError, User, UserStore
 from backend.storage import StorageError
-from shared.config import PROJECT_ROOT
+from shared.config import PROJECT_ROOT, ConfigurationError, load_settings
+from shared.logger import start_logging
 
 DEFAULT_USERS_DB = Path("data") / "motionplay.db"
 Prompt = Callable[[str], str]
@@ -72,6 +73,14 @@ def _list(users: UserStore, args: argparse.Namespace, prompt: Prompt) -> str:
     return "\n".join(lines)
 
 
+def _start_logging() -> None:
+    """Record account events in the log file. Accounts still work if logging cannot be set up."""
+    try:
+        start_logging(load_settings(), "accounts", console=False)
+    except (ConfigurationError, OSError) as error:
+        print(f"Note: account events will not be logged ({error}).", file=sys.stderr)
+
+
 def main(argv: list[str] | None = None, *, prompt: Prompt = getpass.getpass, **options) -> int:
     parser = argparse.ArgumentParser(description="MotionPlay player accounts")
     parser.add_argument("--users-db", type=Path, default=DEFAULT_USERS_DB,
@@ -85,6 +94,7 @@ def main(argv: list[str] | None = None, *, prompt: Prompt = getpass.getpass, **o
 
     actions = {"create": _create, "login": _login, "passwd": _passwd, "list": _list}
     users = None
+    _start_logging()
     try:
         users = open_users(args.users_db, **options)
         print(actions[args.command](users, args, prompt))

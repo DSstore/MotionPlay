@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from types import TracebackType
 
 import cv2
@@ -13,6 +14,7 @@ from shared.config import CameraSettings
 
 
 LOGGER = logging.getLogger("motionplay.cv_engine.camera")
+SLOW_OPEN_SECONDS = 5.0  # Opening a webcam normally takes well under this.
 
 
 class CameraError(CVEngineError):
@@ -31,6 +33,7 @@ class Camera:
         if self._capture is not None:
             raise CameraError("The webcam is already open in this controller.")
         LOGGER.info("Opening webcam index %d.", self.settings.index)
+        started = time.perf_counter()
         try:
             self._capture = cv2.VideoCapture(self.settings.index)
             if not self._capture.isOpened():
@@ -51,6 +54,12 @@ class Camera:
                 self._capture.get(cv2.CAP_PROP_FRAME_HEIGHT),
                 self._capture.get(cv2.CAP_PROP_FPS),
             )
+            elapsed = time.perf_counter() - started
+            if elapsed > SLOW_OPEN_SECONDS:
+                LOGGER.warning("Opening the webcam took %.1f s. Other camera apps or the camera driver can cause "
+                               "slow starts; Ctrl+C is not handled until it finishes.", elapsed)
+            else:
+                LOGGER.info("Opening the webcam took %.1f s.", elapsed)
         except (CameraError, cv2.error):
             self.close()
             raise CameraError(
