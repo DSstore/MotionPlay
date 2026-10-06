@@ -83,7 +83,7 @@ def check_pipeline(dotnet: str, assembly: Path) -> None:
         tail, errors = process.communicate(timeout=12)
         assert process.returncode == 0, errors
         assert "TIMEOUT" in tail
-        print("PASS Python landmarks → palm/gestures → UDP → C# cursor mapping/loss; invalid packet rejected")
+        print("PASS Python landmarks -> palm/gestures -> UDP -> C# cursor mapping/loss; invalid packet rejected")
     finally:
         stop_probe(process)
 
